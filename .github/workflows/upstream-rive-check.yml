@@ -120,6 +120,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $branch = "feature/update-rive-runtime"
+          $prTitle = "Update rive-runtime to ${{ steps.versions.outputs.latest_sha }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B $branch
@@ -135,9 +136,27 @@ jobs:
 
           $existing = gh pr list --head $branch --base main --state open --json number --jq ".[0].number"
           if ($existing) {
-            gh pr edit $existing --title "Update rive-runtime to ${{ steps.versions.outputs.latest_sha }}" --body $body
+            gh pr edit $existing --title $prTitle --body $body
           } else {
-            gh pr create --base main --head $branch --title "Update rive-runtime to ${{ steps.versions.outputs.latest_sha }}" --body $body
+            gh pr create --base main --head $branch --title $prTitle --body $body
+          }
+
+          if ($LASTEXITCODE -ne 0) {
+            $issueTitle = "Upstream rive-runtime update branch ready"
+            $issueBody = @(
+              "The daily upstream check passed and pushed an update branch, but GitHub Actions was not allowed to create the PR automatically.",
+              "",
+              "- Branch: $branch",
+              "- Suggested PR URL: https://github.com/${{ github.repository }}/pull/new/$branch",
+              "- Tested upstream SHA: ${{ steps.versions.outputs.latest_sha }}"
+            ) -join "`n"
+            $issueSearch = "Upstream rive-runtime update branch ready in:title"
+            $issue = gh issue list --state open --search $issueSearch --json number --jq ".[0].number"
+            if ($issue) {
+              gh issue comment $issue --body $issueBody
+            } else {
+              gh issue create --title $issueTitle --body $issueBody
+            }
           }
 
       - name: Close failure issue after success
@@ -146,9 +165,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $issue = gh issue list --state open --search '"Upstream rive-runtime check failed" in:title' --json number --jq ".[0].number"
+          $issueSearch = "Upstream rive-runtime check failed in:title"
+          $issue = gh issue list --state open --search $issueSearch --json number --jq ".[0].number"
           if ($issue) {
             gh issue close $issue --comment "The daily upstream check passed for ${{ steps.versions.outputs.latest_sha }} in ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+
+          $readySearch = "Upstream rive-runtime update branch ready in:title"
+          $readyIssue = gh issue list --state open --search $readySearch --json number --jq ".[0].number"
+          if ($readyIssue) {
+            gh issue close $readyIssue --comment "The update PR was created or is no longer needed after the successful run for ${{ steps.versions.outputs.latest_sha }}."
           }
 
       - name: Notify failure
@@ -168,7 +194,8 @@ jobs:
             "- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           ) -join "`n"
 
-          $issue = gh issue list --state open --search '"Upstream rive-runtime check failed" in:title' --json number --jq ".[0].number"
+          $issueSearch = "Upstream rive-runtime check failed in:title"
+          $issue = gh issue list --state open --search $issueSearch --json number --jq ".[0].number"
           if ($issue) {
             gh issue comment $issue --body $body
           } else {
