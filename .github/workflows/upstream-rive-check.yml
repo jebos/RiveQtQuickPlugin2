@@ -104,14 +104,18 @@ jobs:
         shell: powershell
         run: |
           $path = ".\scripts\bootstrap.py"
-          $text = Get-Content $path -Raw
-          $text = [regex]::Replace(
-            $text,
-            '^RIVE_RUNTIME_REV = "[0-9a-f]+"$',
-            'RIVE_RUNTIME_REV = "${{ steps.versions.outputs.latest_sha }}"',
-            [System.Text.RegularExpressions.RegexOptions]::Multiline
-          )
-          Set-Content $path $text -Encoding utf8
+          $old = 'RIVE_RUNTIME_REV = "${{ steps.versions.outputs.current_sha }}"'
+          $new = 'RIVE_RUNTIME_REV = "${{ steps.versions.outputs.latest_sha }}"'
+          $text = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($path))
+          if (-not $text.Contains($old)) {
+            throw "Could not find pinned rive-runtime SHA in scripts/bootstrap.py"
+          }
+          $updated = $text.Replace($old, $new)
+          if ($updated -eq $text) {
+            throw "Failed to update the pinned rive-runtime SHA in scripts/bootstrap.py"
+          }
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+          [System.IO.File]::WriteAllText((Resolve-Path $path), $updated, $utf8NoBom)
 
       - name: Create or update PR
         if: success() && steps.versions.outputs.latest_sha != steps.versions.outputs.current_sha
