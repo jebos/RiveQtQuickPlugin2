@@ -291,6 +291,7 @@ rive::Alignment toRiveAlignment(int alignment)
     return rive::Alignment::center;
   }
 }
+
 } // namespace
 
 struct RiveRenderNode::SharedDocument {

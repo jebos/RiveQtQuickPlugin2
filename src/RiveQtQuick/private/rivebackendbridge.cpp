@@ -10,6 +10,10 @@
 std::unique_ptr<RiveBackendBridge> createRiveD3D12Bridge();
 #endif
 
+#ifdef RIVEQT_ENABLE_METAL
+std::unique_ptr<RiveBackendBridge> createRiveMetalBridge();
+#endif
+
 #ifdef RIVEQT_ENABLE_VULKAN
 std::unique_ptr<RiveBackendBridge> createRiveVulkanBridge();
 #endif
@@ -27,6 +31,12 @@ std::unique_ptr<RiveBackendBridge> RiveBackendBridge::create(
   case QSGRendererInterface::Direct3D12:
 #if defined(Q_OS_WIN) && defined(RIVEQT_ENABLE_D3D12)
     return createRiveD3D12Bridge();
+#else
+    break;
+#endif
+  case QSGRendererInterface::Metal:
+#ifdef RIVEQT_ENABLE_METAL
+    return createRiveMetalBridge();
 #else
     break;
 #endif

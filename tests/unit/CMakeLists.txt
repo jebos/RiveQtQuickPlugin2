@@ -17,14 +17,21 @@ target_compile_definitions(riveqtquick_unit_tests
         RIVEQT_TEST_HOSTED_ASSET_DIR="${CMAKE_SOURCE_DIR}/tests/assets/hosted"
 )
 
-add_test(
-    NAME riveqtquick_unit_tests
-    COMMAND ${CMAKE_COMMAND}
-        -DWINDEPLOYQT_EXECUTABLE=${WINDEPLOYQT_EXECUTABLE}
-        -DDEPLOY_MODE=$<IF:$<CONFIG:Debug>,--debug,--release>
-        -DEXECUTABLE=$<TARGET_FILE:riveqtquick_unit_tests>
-        -DEXECUTABLE_DIR=$<TARGET_FILE_DIR:riveqtquick_unit_tests>
-        -DRUN_DEPLOY_DIR=${CMAKE_CURRENT_BINARY_DIR}/deployed
-        -DWORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/deployed
-        -P ${CMAKE_SOURCE_DIR}/cmake/RunWithWinDeployQt.cmake
-)
+if(WIN32)
+    add_test(
+        NAME riveqtquick_unit_tests
+        COMMAND ${CMAKE_COMMAND}
+            -DWINDEPLOYQT_EXECUTABLE=${WINDEPLOYQT_EXECUTABLE}
+            -DDEPLOY_MODE=$<IF:$<CONFIG:Debug>,--debug,--release>
+            -DEXECUTABLE=$<TARGET_FILE:riveqtquick_unit_tests>
+            -DEXECUTABLE_DIR=$<TARGET_FILE_DIR:riveqtquick_unit_tests>
+            -DRUN_DEPLOY_DIR=${CMAKE_CURRENT_BINARY_DIR}/deployed
+            -DWORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/deployed
+            -P ${CMAKE_SOURCE_DIR}/cmake/RunWithWinDeployQt.cmake
+    )
+else()
+    add_test(
+        NAME riveqtquick_unit_tests
+        COMMAND $<TARGET_FILE:riveqtquick_unit_tests>
+    )
+endif()

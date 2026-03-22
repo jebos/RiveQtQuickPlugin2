@@ -1,5 +1,6 @@
 qt_add_executable(riveqtquick_minimal
     main.cpp
+    "${CMAKE_SOURCE_DIR}/examples/common/exampleappsupport.cpp"
 )
 
 riveqt_set_runtime_output_directory(riveqtquick_minimal "apps")
@@ -12,20 +13,26 @@ target_link_libraries(riveqtquick_minimal
         Qt6::Quick
         RiveQtQuick
 )
+target_include_directories(riveqtquick_minimal
+    PRIVATE
+        "${CMAKE_SOURCE_DIR}/examples/common"
+)
 target_compile_definitions(riveqtquick_minimal
     PRIVATE
         RIVEQT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+        RIVEQT_BUILD_QML_IMPORT_DIR="${CMAKE_BINARY_DIR}/src"
 )
 
 add_dependencies(riveqtquick_minimal RiveQtQuickPlugin)
-add_custom_command(
-    TARGET riveqtquick_minimal
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/Main.qml"
-        "$<TARGET_FILE_DIR:riveqtquick_minimal>/Main.qml"
-    COMMENT "Copying minimal Main.qml"
+riveqt_add_example_app_support(riveqtquick_minimal
+    QML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/Main.qml"
+    IOS_MODULE_URI "RiveQtQuickExamples.Minimal"
+    BUNDLE_SUFFIX "minimal"
+    QMLDIR "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESOURCE_FILES
+        "${CMAKE_SOURCE_DIR}/tests/assets/rive/hosted_image_file.riv"
+        "${CMAKE_SOURCE_DIR}/tests/assets/hosted/eve-317.png"
+        "${CMAKE_SOURCE_DIR}/tests/assets/hosted/one-45008.png"
+        "${CMAKE_SOURCE_DIR}/tests/assets/hosted/walle-370.png"
+        "${CMAKE_SOURCE_DIR}/tests/assets/hosted/walle.riv"
 )
-riveqt_add_windeployqt(riveqtquick_minimal QMLDIR "${CMAKE_CURRENT_SOURCE_DIR}")
-riveqt_deploy_local_qml_module(riveqtquick_minimal RiveQtQuick "${CMAKE_BINARY_DIR}/src/RiveQtQuick" RiveQtQuickPlugin)
-riveqt_deploy_runtime_dll(riveqtquick_minimal RiveQtQuick)

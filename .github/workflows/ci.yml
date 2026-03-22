@@ -85,3 +85,103 @@ jobs:
         shell: powershell
         run: |
           ctest --test-dir build-ci -C Debug --output-on-failure --timeout 180
+
+  linux-build-and-test:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libegl1-mesa-dev \
+            libfontconfig1 \
+            libgl1-mesa-dev \
+            libglib2.0-0t64 \
+            libxkbcommon-dev \
+            libxkbcommon-x11-0 \
+            libxkbcommon-x11-dev \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xinerama0 \
+            libxcb-xinput0 \
+            ninja-build \
+            xvfb
+
+      - name: Bootstrap third-party dependencies
+        run: |
+          python ./scripts/bootstrap.py
+          required=(
+            "./3rdparty/rive-cpp/include/rive/file.hpp"
+            "./3rdparty/luau/VM/include/lua.h"
+            "./3rdparty/libhydrogen/libhydrogen.c"
+          )
+          missing=()
+          for path in "${required[@]}"; do
+            if [[ ! -e "${path}" ]]; then
+              missing+=("${path}")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "Missing vendored files after bootstrap:"
+            printf '  %s\n' "${missing[@]}"
+            echo "Retrying bootstrap with --refresh"
+            python ./scripts/bootstrap.py --refresh
+          fi
+
+      - name: Install Qt
+        id: qt
+        run: |
+          python -m pip install --upgrade pip aqtinstall
+          qt_root="${RUNNER_TEMP}/Qt"
+          python -m aqt install-qt linux desktop 6.10.3 linux_gcc_64 --outputdir "${qt_root}"
+          qt6_config="$(find "${qt_root}" -path '*/Qt6Config.cmake' | head -n 1)"
+          if [[ -z "${qt6_config}" ]]; then
+            echo "Qt6Config.cmake was not found under ${qt_root}" >&2
+            exit 1
+          fi
+          qt6_dir="$(dirname "${qt6_config}")"
+          qt_prefix="$(cd "${qt6_dir}/../../.." && pwd)"
+          {
+            echo "qt_root=${qt_prefix}"
+            echo "qt6_dir=${qt6_dir}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Verify vendored dependencies
+        run: |
+          test -f ./3rdparty/libhydrogen/libhydrogen.c
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-ci-linux -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_PREFIX_PATH="${{ steps.qt.outputs.qt_root }}" \
+            -DQt6_DIR="${{ steps.qt.outputs.qt6_dir }}" \
+            -DRIVEQT_BUILD_EXAMPLES=ON \
+            -DRIVEQT_BUILD_TESTS=ON
+
+      - name: Build
+        run: |
+          cmake --build build-ci-linux --target \
+            riveqtquick_marketplace_demo \
+            riveqtquick_qml_tests \
+            riveqtquick_unit_tests
+
+      - name: Test
+        run: |
+          QT_QPA_PLATFORM=offscreen ctest --test-dir build-ci-linux --output-on-failure --timeout 180

@@ -1,5 +1,10 @@
 #include "marketplacecatalog.h"
 
+#if defined(Q_OS_IOS)
+#include "marketplaceiosnetwork.h"
+#endif
+
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -67,6 +72,15 @@ QVariantMap emptyMetadata()
     };
 }
 
+QList<QPair<QByteArray, QByteArray>> defaultHeaders(const QByteArray& userAgent,
+                                                    const QByteArray& accept)
+{
+    return {
+        {QByteArrayLiteral("User-Agent"), userAgent},
+        {QByteArrayLiteral("accept"), accept},
+    };
+}
+
 } // namespace
 
 MarketplaceCatalogModel::MarketplaceCatalogModel(QObject* parent) :
@@ -110,7 +124,7 @@ QVariant MarketplaceCatalogModel::data(const QModelIndex& index, int role) const
         case DescriptionRole:
             return entry->description;
         case PreviewImageUrlRole:
-            return entry->previewImageUrl;
+            return previewImageUrlForEntry(*entry);
         case RiveSourceRole:
             return sourceUrlForEntry(*entry);
         case AvailabilityRole:
@@ -232,17 +246,23 @@ bool MarketplaceCatalogModel::hasMoreRemoteEntries() const
     return m_hasMoreRemoteEntries;
 }
 
-void MarketplaceCatalogModel::initialize(const QString& sourceDir)
+QString MarketplaceCatalogModel::loadError() const
+{
+    return m_loadError;
+}
+
+void MarketplaceCatalogModel::initialize(const QUrl& sourceBaseUrl)
 {
     beginResetModel();
     m_entries.clear();
     m_visibleIndexes.clear();
     m_currentIndex = -1;
     m_currentId.clear();
-    m_sourceDir = sourceDir;
+    m_sourceBaseUrl = sourceBaseUrl;
     m_nextFeaturedPage = 0;
     m_isLoadingMore = false;
     m_hasMoreRemoteEntries = true;
+    m_loadError.clear();
     if (m_loadReply)
     {
         m_loadReply->abort();
@@ -255,6 +275,31 @@ void MarketplaceCatalogModel::initialize(const QString& sourceDir)
         m_downloadReply->deleteLater();
         m_downloadReply = nullptr;
     }
+#if defined(Q_OS_IOS)
+    if (m_iosLoadRequest)
+    {
+        m_iosLoadRequest->cancel();
+        m_iosLoadRequest->deleteLater();
+        m_iosLoadRequest = nullptr;
+    }
+    if (m_iosDownloadRequest)
+    {
+        m_iosDownloadRequest->cancel();
+        m_iosDownloadRequest->deleteLater();
+        m_iosDownloadRequest = nullptr;
+    }
+    for (auto it = m_previewImageRequests.begin();
+         it != m_previewImageRequests.end();
+         ++it)
+    {
+        if (*it)
+        {
+            (*it)->cancel();
+            (*it)->deleteLater();
+        }
+    }
+    m_previewImageRequests.clear();
+#endif
     endResetModel();
 
     emit currentIndexChanged();
@@ -263,12 +308,13 @@ void MarketplaceCatalogModel::initialize(const QString& sourceDir)
     emit currentHasPreviewChanged();
     emit isLoadingMoreChanged();
     emit hasMoreRemoteEntriesChanged();
+    emit loadErrorChanged();
 
     loadMore();
 }
 
 bool MarketplaceCatalogModel::loadFromFile(const QString& catalogPath,
-                                           const QString& sourceDir)
+                                           const QUrl& sourceBaseUrl)
 {
     QFile file(catalogPath);
     if (!file.open(QIODevice::ReadOnly))
@@ -287,10 +333,11 @@ bool MarketplaceCatalogModel::loadFromFile(const QString& catalogPath,
     m_visibleIndexes.clear();
     m_currentIndex = -1;
     m_currentId.clear();
-    m_sourceDir = sourceDir;
+    m_sourceBaseUrl = sourceBaseUrl;
     m_nextFeaturedPage = 0;
     m_isLoadingMore = false;
     m_hasMoreRemoteEntries = true;
+    m_loadError.clear();
     if (m_loadReply)
     {
         m_loadReply->abort();
@@ -303,6 +350,31 @@ bool MarketplaceCatalogModel::loadFromFile(const QString& catalogPath,
         m_downloadReply->deleteLater();
         m_downloadReply = nullptr;
     }
+#if defined(Q_OS_IOS)
+    if (m_iosLoadRequest)
+    {
+        m_iosLoadRequest->cancel();
+        m_iosLoadRequest->deleteLater();
+        m_iosLoadRequest = nullptr;
+    }
+    if (m_iosDownloadRequest)
+    {
+        m_iosDownloadRequest->cancel();
+        m_iosDownloadRequest->deleteLater();
+        m_iosDownloadRequest = nullptr;
+    }
+    for (auto it = m_previewImageRequests.begin();
+         it != m_previewImageRequests.end();
+         ++it)
+    {
+        if (*it)
+        {
+            (*it)->cancel();
+            (*it)->deleteLater();
+        }
+    }
+    m_previewImageRequests.clear();
+#endif
 
     const QJsonArray entries = document.array();
     m_entries.reserve(entries.size());
@@ -336,19 +408,88 @@ void MarketplaceCatalogModel::loadMore()
                        QString::number(m_nextFeaturedPage));
     url.setQuery(query);
 
+#if defined(Q_OS_IOS)
+    setLoadError(QString());
+    setLoadingMore(true);
+    m_iosLoadRequest = marketplaceAppleGet(
+        url,
+        defaultHeaders(QByteArrayLiteral("QtQuickRivePlugin2 marketplace browser"),
+                       QByteArrayLiteral("application/json, text/plain, */*")),
+        30000,
+        this,
+        [this, url](const MarketplaceAppleResponse& response) {
+            if (m_iosLoadRequest)
+            {
+                m_iosLoadRequest->deleteLater();
+                m_iosLoadRequest = nullptr;
+            }
+
+            if (!response.errorText.isEmpty())
+            {
+                qWarning() << "Marketplace featured feed request failed for"
+                           << url << ":" << response.errorText;
+                setLoadError(response.errorText);
+                setLoadingMore(false);
+                return;
+            }
+
+            const QJsonDocument document =
+                QJsonDocument::fromJson(response.payload);
+            if (!document.isArray())
+            {
+                qWarning() << "Marketplace featured feed returned unexpected data"
+                           << "for" << url;
+                setLoadError(
+                    QStringLiteral("Featured feed returned unexpected data."));
+                setLoadingMore(false);
+                return;
+            }
+
+            const QJsonArray entries = document.array();
+            QVector<MarketplaceCatalogEntry> parsedEntries;
+            parsedEntries.reserve(entries.size());
+            for (const QJsonValue& value : entries)
+            {
+                if (!value.isObject())
+                {
+                    continue;
+                }
+                parsedEntries.append(entryFromApiJson(value.toObject()));
+            }
+
+            qInfo() << "Marketplace featured feed returned"
+                    << parsedEntries.size() << "entries for page"
+                    << m_nextFeaturedPage << "via NSURLSession";
+
+            appendEntries(parsedEntries);
+            ++m_nextFeaturedPage;
+            setHasMoreRemoteEntries(!entries.isEmpty());
+            setLoadError(QString());
+            setLoadingMore(false);
+        });
+    return;
+#else
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::UserAgentHeader,
                       QStringLiteral("QtQuickRivePlugin2 marketplace browser"));
     request.setRawHeader("accept", "application/json, text/plain, */*");
+    request.setTransferTimeout(30000);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
 
+    setLoadError(QString());
     setLoadingMore(true);
     QNetworkReply* reply = m_networkAccessManager.get(request);
     m_loadReply = reply;
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, url]() {
         const QPointer<QNetworkReply> guard(reply);
         if (reply->error() != QNetworkReply::NoError)
         {
+            const QString errorText = reply->errorString();
+            qWarning() << "Marketplace featured feed request failed for" << url
+                       << ":" << errorText;
+            setLoadError(errorText);
             setLoadingMore(false);
             if (m_loadReply == reply)
             {
@@ -361,6 +502,9 @@ void MarketplaceCatalogModel::loadMore()
         const QJsonDocument document = QJsonDocument::fromJson(reply->readAll());
         if (!document.isArray())
         {
+            qWarning() << "Marketplace featured feed returned unexpected data"
+                       << "for" << url;
+            setLoadError(QStringLiteral("Featured feed returned unexpected data."));
             setLoadingMore(false);
             if (m_loadReply == reply)
             {
@@ -382,9 +526,13 @@ void MarketplaceCatalogModel::loadMore()
             parsedEntries.append(entryFromApiJson(value.toObject()));
         }
 
+        qInfo() << "Marketplace featured feed returned" << parsedEntries.size()
+                << "entries for page" << m_nextFeaturedPage;
+
         appendEntries(parsedEntries);
         ++m_nextFeaturedPage;
         setHasMoreRemoteEntries(!entries.isEmpty());
+        setLoadError(QString());
         setLoadingMore(false);
 
         if (m_loadReply == guard)
@@ -393,12 +541,17 @@ void MarketplaceCatalogModel::loadMore()
         }
         reply->deleteLater();
     });
+#endif
 }
 
 void MarketplaceCatalogModel::downloadCurrent()
 {
     const int entryIndex = currentEntryIndex();
-    if (entryIndex < 0 || entryIndex >= m_entries.size() || m_downloadReply)
+    if (entryIndex < 0 || entryIndex >= m_entries.size() || m_downloadReply
+#if defined(Q_OS_IOS)
+        || m_iosDownloadRequest
+#endif
+    )
     {
         return;
     }
@@ -422,10 +575,73 @@ void MarketplaceCatalogModel::downloadCurrent()
     entry.downloadTotalBytes = 0;
     notifyEntryUpdated(entryIndex, {});
 
+#if defined(Q_OS_IOS)
+    m_iosDownloadRequest = marketplaceAppleGet(
+        remoteUrl,
+        defaultHeaders(
+            QByteArrayLiteral("QtQuickRivePlugin2 marketplace downloader"),
+            QByteArrayLiteral("*/*")),
+        30000,
+        this,
+        [this, entryIndex](const MarketplaceAppleResponse& response) {
+            if (m_iosDownloadRequest)
+            {
+                m_iosDownloadRequest->deleteLater();
+                m_iosDownloadRequest = nullptr;
+            }
+
+            if (entryIndex < 0 || entryIndex >= m_entries.size())
+            {
+                return;
+            }
+
+            MarketplaceCatalogEntry& entry = m_entries[entryIndex];
+            entry.isDownloading = false;
+            entry.downloadBytes = 0;
+            entry.downloadTotalBytes = 0;
+
+            if (!response.errorText.isEmpty())
+            {
+                entry.downloadError = response.errorText;
+                notifyEntryUpdated(entryIndex, {});
+                return;
+            }
+
+            if (response.payload.isEmpty())
+            {
+                entry.downloadError = QStringLiteral(
+                    "Downloaded runtime file was empty.");
+                notifyEntryUpdated(entryIndex, {});
+                return;
+            }
+
+            const QString targetPath = cacheFilePathForEntry(entry);
+            QDir().mkpath(QFileInfo(targetPath).absolutePath());
+
+            QSaveFile targetFile(targetPath);
+            if (!targetFile.open(QIODevice::WriteOnly) ||
+                targetFile.write(response.payload) != response.payload.size() ||
+                !targetFile.commit())
+            {
+                entry.downloadError = targetFile.errorString();
+                notifyEntryUpdated(entryIndex, {});
+                return;
+            }
+
+            entry.cachedRiveSource = QUrl::fromLocalFile(targetPath).toString();
+            entry.availability = QStringLiteral("downloaded");
+            entry.downloadError.clear();
+            notifyEntryUpdated(entryIndex, {});
+        });
+    return;
+#else
     QNetworkRequest request(remoteUrl);
     request.setHeader(QNetworkRequest::UserAgentHeader,
                       QStringLiteral("QtQuickRivePlugin2 marketplace downloader"));
     request.setRawHeader("accept", "*/*");
+    request.setTransferTimeout(30000);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
 
     QNetworkReply* reply = m_networkAccessManager.get(request);
     reply->setProperty("entryIndex", entryIndex);
@@ -508,6 +724,7 @@ void MarketplaceCatalogModel::downloadCurrent()
         notifyEntryUpdated(entryIndex, {});
         finalizeReply();
     });
+#endif
 }
 
 void MarketplaceCatalogModel::appendEntries(
@@ -548,6 +765,13 @@ void MarketplaceCatalogModel::appendEntries(
             setCurrentIndex(0);
         }
     }
+
+#if defined(Q_OS_IOS)
+    for (int entryIndex : appendedVisibleIndexes)
+    {
+        fetchPreviewImage(entryIndex);
+    }
+#endif
 }
 
 void MarketplaceCatalogModel::setLoadingMore(bool loading)
@@ -568,6 +792,17 @@ void MarketplaceCatalogModel::setHasMoreRemoteEntries(bool hasMore)
     }
     m_hasMoreRemoteEntries = hasMore;
     emit hasMoreRemoteEntriesChanged();
+}
+
+void MarketplaceCatalogModel::setLoadError(const QString& error)
+{
+    if (m_loadError == error)
+    {
+        return;
+    }
+
+    m_loadError = error;
+    emit loadErrorChanged();
 }
 
 int MarketplaceCatalogModel::indexOfEntryId(const QString& id) const
@@ -713,6 +948,13 @@ void MarketplaceCatalogModel::hydrateCachedEntry(MarketplaceCatalogEntry* entry)
     {
         entry->availability = QStringLiteral("downloaded");
     }
+
+    const QString cachedPreviewPath = previewImageCachePathForEntry(*entry);
+    if (QFileInfo::exists(cachedPreviewPath))
+    {
+        entry->cachedPreviewImageSource =
+            QUrl::fromLocalFile(cachedPreviewPath).toString();
+    }
 }
 
 QString MarketplaceCatalogModel::cacheFilePathForEntry(
@@ -722,6 +964,23 @@ QString MarketplaceCatalogModel::cacheFilePathForEntry(
         QStandardPaths::AppDataLocation);
     return QDir(baseDir).filePath(QStringLiteral("marketplace-cache/%1.riv")
                                       .arg(entry.id));
+}
+
+QString MarketplaceCatalogModel::previewImageCachePathForEntry(
+    const MarketplaceCatalogEntry& entry) const
+{
+    QString suffix =
+        QFileInfo(QUrl(entry.previewImageUrl).path()).suffix().toLower();
+    if (suffix.isEmpty())
+    {
+        suffix = QStringLiteral("png");
+    }
+
+    const QString baseDir = QStandardPaths::writableLocation(
+        QStandardPaths::AppDataLocation);
+    return QDir(baseDir).filePath(
+        QStringLiteral("marketplace-preview-cache/%1.%2")
+            .arg(entry.id, suffix));
 }
 
 const MarketplaceCatalogEntry* MarketplaceCatalogModel::entryAtVisibleIndex(
@@ -742,7 +1001,8 @@ QVariantMap MarketplaceCatalogModel::metadataForEntry(
         {QStringLiteral("author"), entry.author},
         {QStringLiteral("license"), entry.license},
         {QStringLiteral("sourceUrl"), entry.detailUrl},
-        {QStringLiteral("previewImageUrl"), entry.previewImageUrl},
+        {QStringLiteral("previewImageUrl"),
+         previewImageUrlForEntry(entry).toString()},
         {QStringLiteral("isForHire"), entry.isForHire},
         {QStringLiteral("tags"), entry.tags},
         {QStringLiteral("description"), entry.description},
@@ -766,9 +1026,7 @@ QUrl MarketplaceCatalogModel::sourceUrlForEntry(
 {
     if (!entry.cachedRiveSource.isEmpty())
     {
-        return QUrl::fromUserInput(entry.cachedRiveSource,
-                                   m_sourceDir,
-                                   QUrl::AssumeLocalFile);
+        return resolveSourceUrl(entry.cachedRiveSource);
     }
 
     if (!entrySupportsPreview(entry) || entry.riveSource.isEmpty())
@@ -776,8 +1034,7 @@ QUrl MarketplaceCatalogModel::sourceUrlForEntry(
         return {};
     }
 
-    const QUrl url =
-        QUrl::fromUserInput(entry.riveSource, m_sourceDir, QUrl::AssumeLocalFile);
+    const QUrl url = resolveSourceUrl(entry.riveSource);
     if (!url.isValid())
     {
         return {};
@@ -790,6 +1047,126 @@ QUrl MarketplaceCatalogModel::sourceUrlForEntry(
 
     return url;
 }
+
+QUrl MarketplaceCatalogModel::previewImageUrlForEntry(
+    const MarketplaceCatalogEntry& entry) const
+{
+    if (!entry.cachedPreviewImageSource.isEmpty())
+    {
+        return resolveSourceUrl(entry.cachedPreviewImageSource);
+    }
+
+    const QUrl url = resolveSourceUrl(entry.previewImageUrl);
+#if defined(Q_OS_IOS)
+    if (url.isValid() && !url.isLocalFile() &&
+        url.scheme() != QStringLiteral("qrc"))
+    {
+        return {};
+    }
+#endif
+    return url;
+}
+
+QUrl MarketplaceCatalogModel::resolveSourceUrl(const QString& source) const
+{
+    const QString trimmedSource = source.trimmed();
+    if (trimmedSource.isEmpty())
+    {
+        return {};
+    }
+
+    const QFileInfo sourceInfo(trimmedSource);
+    if (sourceInfo.isAbsolute())
+    {
+        return QUrl::fromLocalFile(sourceInfo.absoluteFilePath());
+    }
+
+    const QUrl directUrl(trimmedSource);
+    if (directUrl.isValid() &&
+        (directUrl.scheme() == QStringLiteral("qrc") || !directUrl.isRelative()))
+    {
+        return directUrl;
+    }
+
+    if (m_sourceBaseUrl.isValid())
+    {
+        const QUrl resolvedUrl = m_sourceBaseUrl.resolved(QUrl(trimmedSource));
+        if (resolvedUrl.isValid())
+        {
+            return resolvedUrl;
+        }
+    }
+
+    const QUrl userInputUrl =
+        QUrl::fromUserInput(trimmedSource, QString(), QUrl::AssumeLocalFile);
+    return userInputUrl.isValid() ? userInputUrl : QUrl();
+}
+
+#if defined(Q_OS_IOS)
+void MarketplaceCatalogModel::fetchPreviewImage(int entryIndex)
+{
+    if (entryIndex < 0 || entryIndex >= m_entries.size())
+    {
+        return;
+    }
+
+    MarketplaceCatalogEntry& entry = m_entries[entryIndex];
+    if (!entry.cachedPreviewImageSource.isEmpty() ||
+        m_previewImageRequests.contains(entryIndex))
+    {
+        return;
+    }
+
+    const QUrl url = resolveSourceUrl(entry.previewImageUrl);
+    if (!url.isValid() || url.isLocalFile() ||
+        url.scheme() == QStringLiteral("qrc"))
+    {
+        return;
+    }
+
+    auto* request = marketplaceAppleGet(
+        url,
+        defaultHeaders(
+            QByteArrayLiteral("QtQuickRivePlugin2 marketplace preview"),
+            QByteArrayLiteral("image/*,*/*")),
+        30000,
+        this,
+        [this, entryIndex](const MarketplaceAppleResponse& response) {
+            if (auto it = m_previewImageRequests.find(entryIndex);
+                it != m_previewImageRequests.end())
+            {
+                if (*it)
+                {
+                    (*it)->deleteLater();
+                }
+                m_previewImageRequests.erase(it);
+            }
+
+            if (entryIndex < 0 || entryIndex >= m_entries.size() ||
+                !response.errorText.isEmpty() || response.payload.isEmpty())
+            {
+                return;
+            }
+
+            MarketplaceCatalogEntry& entry = m_entries[entryIndex];
+            const QString targetPath = previewImageCachePathForEntry(entry);
+            QDir().mkpath(QFileInfo(targetPath).absolutePath());
+
+            QSaveFile targetFile(targetPath);
+            if (!targetFile.open(QIODevice::WriteOnly) ||
+                targetFile.write(response.payload) != response.payload.size() ||
+                !targetFile.commit())
+            {
+                return;
+            }
+
+            entry.cachedPreviewImageSource =
+                QUrl::fromLocalFile(targetPath).toString();
+            notifyEntryUpdated(entryIndex, {PreviewImageUrlRole});
+        });
+    m_previewImageRequests.insert(entryIndex, request);
+}
+#endif
 
 MarketplaceCatalogEntry MarketplaceCatalogModel::entryFromJson(
     const QJsonObject& object)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
@@ -10,6 +11,7 @@
 #include <QVariantMap>
 
 class QNetworkReply;
+class MarketplaceAppleRequest;
 
 struct MarketplaceCatalogEntry
 {
@@ -22,6 +24,7 @@ struct MarketplaceCatalogEntry
     QStringList tags;
     QString description;
     QString previewImageUrl;
+    QString cachedPreviewImageSource;
     QString riveSource;
     QString cachedRiveSource;
     QString availability;
@@ -42,6 +45,7 @@ class MarketplaceCatalogModel : public QAbstractListModel
     Q_PROPERTY(bool currentHasPreview READ currentHasPreview NOTIFY currentHasPreviewChanged FINAL)
     Q_PROPERTY(bool isLoadingMore READ isLoadingMore NOTIFY isLoadingMoreChanged FINAL)
     Q_PROPERTY(bool hasMoreRemoteEntries READ hasMoreRemoteEntries NOTIFY hasMoreRemoteEntriesChanged FINAL)
+    Q_PROPERTY(QString loadError READ loadError NOTIFY loadErrorChanged FINAL)
 
 public:
     enum Role
@@ -80,9 +84,11 @@ public:
     bool currentHasPreview() const;
     bool isLoadingMore() const;
     bool hasMoreRemoteEntries() const;
+    QString loadError() const;
 
-    void initialize(const QString& sourceDir);
-    bool loadFromFile(const QString& catalogPath, const QString& sourceDir);
+    void initialize(const QUrl& sourceBaseUrl = QUrl());
+    bool loadFromFile(const QString& catalogPath,
+                      const QUrl& sourceBaseUrl = QUrl());
     Q_INVOKABLE void loadMore();
     Q_INVOKABLE void downloadCurrent();
 
@@ -94,11 +100,13 @@ signals:
     void currentHasPreviewChanged();
     void isLoadingMoreChanged();
     void hasMoreRemoteEntriesChanged();
+    void loadErrorChanged();
 
 private:
     void appendEntries(const QVector<MarketplaceCatalogEntry>& entries);
     void setLoadingMore(bool loading);
     void setHasMoreRemoteEntries(bool hasMore);
+    void setLoadError(const QString& error);
     int indexOfEntryId(const QString& id) const;
     int visibleRowForEntryIndex(int entryIndex) const;
     int currentEntryIndex() const;
@@ -108,22 +116,35 @@ private:
     void setCurrentEntryById(const QString& id);
     void hydrateCachedEntry(MarketplaceCatalogEntry* entry) const;
     QString cacheFilePathForEntry(const MarketplaceCatalogEntry& entry) const;
+    QString previewImageCachePathForEntry(
+        const MarketplaceCatalogEntry& entry) const;
     const MarketplaceCatalogEntry* entryAtVisibleIndex(int index) const;
     QVariantMap metadataForEntry(const MarketplaceCatalogEntry& entry) const;
     QUrl sourceUrlForEntry(const MarketplaceCatalogEntry& entry) const;
+    QUrl previewImageUrlForEntry(const MarketplaceCatalogEntry& entry) const;
+    QUrl resolveSourceUrl(const QString& source) const;
     static MarketplaceCatalogEntry entryFromJson(const QJsonObject& object);
     static MarketplaceCatalogEntry entryFromApiJson(const QJsonObject& object);
+#if defined(Q_OS_IOS)
+    void fetchPreviewImage(int entryIndex);
+#endif
 
     QVector<MarketplaceCatalogEntry> m_entries;
     QVector<int> m_visibleIndexes;
     QString m_searchText;
-    QString m_sourceDir;
+    QUrl m_sourceBaseUrl;
     QString m_currentId;
     int m_currentIndex { -1 };
     int m_nextFeaturedPage { 0 };
     bool m_isLoadingMore { false };
     bool m_hasMoreRemoteEntries { true };
+    QString m_loadError;
     QNetworkAccessManager m_networkAccessManager;
     QPointer<QNetworkReply> m_loadReply;
     QPointer<QNetworkReply> m_downloadReply;
+#if defined(Q_OS_IOS)
+    QPointer<MarketplaceAppleRequest> m_iosLoadRequest;
+    QPointer<MarketplaceAppleRequest> m_iosDownloadRequest;
+    QHash<int, QPointer<MarketplaceAppleRequest>> m_previewImageRequests;
+#endif
 };

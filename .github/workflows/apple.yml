@@ -1,0 +1,200 @@
+name: Apple Builds
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - feature/**
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  QT_VERSION: "6.10.3"
+
+permissions:
+  contents: read
+
+jobs:
+  macos-build-and-test:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install macOS build tools
+        run: |
+          brew install cmake ninja
+
+      - name: Bootstrap third-party dependencies
+        run: |
+          python ./scripts/bootstrap.py
+          required=(
+            "./3rdparty/rive-cpp/include/rive/file.hpp"
+            "./3rdparty/luau/VM/include/lua.h"
+            "./3rdparty/libhydrogen/libhydrogen.c"
+          )
+          missing=()
+          for path in "${required[@]}"; do
+            if [[ ! -e "${path}" ]]; then
+              missing+=("${path}")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "Missing vendored files after bootstrap:"
+            printf '  %s\n' "${missing[@]}"
+            echo "Retrying bootstrap with --refresh"
+            python ./scripts/bootstrap.py --refresh
+          fi
+
+      - name: Install Qt
+        id: qt
+        run: |
+          python -m pip install --upgrade pip aqtinstall
+          qt_root="${RUNNER_TEMP}/Qt"
+          python -m aqt install-qt mac desktop "${QT_VERSION}" clang_64 --outputdir "${qt_root}"
+          qt6_config="$(find "${qt_root}" -path '*/Qt6Config.cmake' | head -n 1)"
+          if [[ -z "${qt6_config}" ]]; then
+            echo "Qt6Config.cmake was not found under ${qt_root}" >&2
+            exit 1
+          fi
+          qt6_dir="$(dirname "${qt6_config}")"
+          qt_prefix="$(cd "${qt6_dir}/../../.." && pwd)"
+          {
+            echo "qt_root=${qt_prefix}"
+            echo "qt6_dir=${qt6_dir}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Verify Metal toolchain
+        run: |
+          xcrun metal -help >/dev/null
+          xcrun -find metallib >/dev/null
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-macos-ci -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_PREFIX_PATH="${{ steps.qt.outputs.qt_root }}" \
+            -DQt6_DIR="${{ steps.qt.outputs.qt6_dir }}" \
+            -DRIVEQT_BUILD_EXAMPLES=ON \
+            -DRIVEQT_BUILD_TESTS=ON
+
+      - name: Build
+        run: |
+          cmake --build build-macos-ci --target \
+            riveqtquick_minimal \
+            riveqtquick_interactive \
+            riveqtquick_icon_grid \
+            riveqtquick_marketplace_demo \
+            riveqtquick_unit_tests \
+            riveqtquick_qml_tests
+
+      - name: Test
+        run: |
+          ctest --test-dir build-macos-ci --output-on-failure --timeout 180
+
+  ios-device-build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install iOS build tools
+        run: |
+          brew install cmake
+
+      - name: Bootstrap third-party dependencies
+        run: |
+          python ./scripts/bootstrap.py
+          required=(
+            "./3rdparty/rive-cpp/include/rive/file.hpp"
+            "./3rdparty/luau/VM/include/lua.h"
+            "./3rdparty/libhydrogen/libhydrogen.c"
+          )
+          missing=()
+          for path in "${required[@]}"; do
+            if [[ ! -e "${path}" ]]; then
+              missing+=("${path}")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "Missing vendored files after bootstrap:"
+            printf '  %s\n' "${missing[@]}"
+            echo "Retrying bootstrap with --refresh"
+            python ./scripts/bootstrap.py --refresh
+          fi
+
+      - name: Install Qt desktop and iOS kits
+        id: qt
+        run: |
+          python -m pip install --upgrade pip aqtinstall
+          qt_root="${RUNNER_TEMP}/Qt"
+          python -m aqt install-qt mac desktop "${QT_VERSION}" clang_64 --outputdir "${qt_root}"
+          python -m aqt install-qt mac ios "${QT_VERSION}" ios --outputdir "${qt_root}"
+          qt_host_path="${qt_root}/${QT_VERSION}/macos"
+          qt_ios_toolchain="${qt_root}/${QT_VERSION}/ios/lib/cmake/Qt6/qt.toolchain.cmake"
+          test -d "${qt_host_path}"
+          test -f "${qt_ios_toolchain}"
+          {
+            echo "qt_root=${qt_root}/${QT_VERSION}"
+            echo "qt_host_path=${qt_host_path}"
+            echo "qt_ios_toolchain=${qt_ios_toolchain}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Verify Apple SDK tools
+        run: |
+          xcrun --sdk iphoneos --show-sdk-path >/dev/null
+          xcrun metal -help >/dev/null
+          xcrun -find metallib >/dev/null
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-ios-ci -G Xcode \
+            -DCMAKE_TOOLCHAIN_FILE="${{ steps.qt.outputs.qt_ios_toolchain }}" \
+            -DQT_HOST_PATH="${{ steps.qt.outputs.qt_host_path }}" \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DRIVEQT_BUILD_EXAMPLES=ON \
+            -DRIVEQT_BUILD_TESTS=OFF \
+            -DRIVEQT_IOS_BUNDLE_ID_PREFIX=dev.local.riveqtquick.ci
+
+      - name: Build unsigned iOS apps
+        run: |
+          project="build-ios-ci/QtQuickRivePlugin2.xcodeproj"
+          for scheme in \
+            riveqtquick_minimal \
+            riveqtquick_interactive \
+            riveqtquick_icon_grid \
+            riveqtquick_marketplace_demo
+          do
+            xcodebuild \
+              -project "${project}" \
+              -scheme "${scheme}" \
+              -configuration Debug \
+              -sdk iphoneos \
+              CODE_SIGNING_ALLOWED=NO \
+              build
+          done
+
+      - name: Verify app bundles
+        run: |
+          for app in \
+            riveqtquick_minimal \
+            riveqtquick_interactive \
+            riveqtquick_icon_grid \
+            riveqtquick_marketplace_demo
+          do
+            test -d "build-ios-ci/apps/Debug/${app}/${app}.app"
+          done

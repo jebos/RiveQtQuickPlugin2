@@ -1,10 +1,11 @@
-#include <QDir>
 #include <QGuiApplication>
 #include <QLoggingCategory>
 #include <QQuickStyle>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QTimer>
 
+#include "exampleappsupport.h"
 #include "marketplacecatalog.h"
 
 extern void qml_register_types_RiveQtQuick();
@@ -13,18 +14,49 @@ Q_LOGGING_CATEGORY(lcMarketplaceDemo, "rive.marketplaceDemo")
 
 int main(int argc, char* argv[])
 {
+    RiveQtExampleSupport::configureGraphicsApi();
     QGuiApplication app(argc, argv);
     QQuickStyle::setStyle("Basic");
     qml_register_types_RiveQtQuick();
 
-    const QString sourceDir = QStringLiteral(RIVEQT_SOURCE_DIR);
     MarketplaceCatalogModel catalog;
-    catalog.initialize(sourceDir);
+    const QUrl sourceRoot = RiveQtExampleSupport::sourceRootUrl();
+    auto scheduleFeaturedFeedLoad = [&catalog]() {
+        QMetaObject::invokeMethod(&catalog,
+                                  &MarketplaceCatalogModel::loadMore,
+                                  Qt::QueuedConnection);
+    };
+    const QString starterCatalogPath = RiveQtExampleSupport::assetPath(
+        QStringLiteral("examples/marketplace_demo/starter_catalog.json"));
+    if (!catalog.loadFromFile(starterCatalogPath, sourceRoot))
+    {
+        qCWarning(lcMarketplaceDemo).noquote()
+            << "failed to load bundled starter catalog from"
+            << starterCatalogPath;
+        catalog.initialize(sourceRoot);
+    }
+    else
+    {
+        qCInfo(lcMarketplaceDemo).noquote()
+            << "loaded bundled starter catalog from" << starterCatalogPath
+            << "with" << catalog.rowCount() << "entries";
+        QTimer::singleShot(0, &catalog, scheduleFeaturedFeedLoad);
+    }
+
+#if defined(Q_OS_IOS)
+    QObject::connect(&app,
+                     &QGuiApplication::applicationStateChanged,
+                     &catalog,
+                     [&catalog, scheduleFeaturedFeedLoad](Qt::ApplicationState state) {
+                         if (state == Qt::ApplicationActive)
+                         {
+                             scheduleFeaturedFeedLoad();
+                         }
+                     });
+#endif
 
     QQmlApplicationEngine engine;
-    const QString appDir = QCoreApplication::applicationDirPath();
-    engine.addImportPath(appDir + "/qml");
-    engine.addImportPath(appDir);
+    RiveQtExampleSupport::configureEngine(engine);
     QObject::connect(&engine,
                      &QQmlApplicationEngine::warnings,
                      &app,
@@ -43,7 +75,10 @@ int main(int argc, char* argv[])
                              << "object creation failed for" << url.toString();
                      });
     engine.rootContext()->setContextProperty(QStringLiteral("catalog"), &catalog);
-    engine.load(QUrl::fromLocalFile(QDir(appDir).absoluteFilePath("Main.qml")));
+    RiveQtExampleSupport::loadMainQml(
+        engine,
+        QStringLiteral("RiveQtQuickExamples.MarketplaceDemo"),
+        QStringLiteral("Main.qml"));
     if (engine.rootObjects().isEmpty())
     {
         qCWarning(lcMarketplaceDemo) << "failed to load Main.qml";

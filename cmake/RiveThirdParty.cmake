@@ -25,6 +25,9 @@ set(RIVEQT_ENABLE_D3D12 OFF)
 if(WIN32)
     set(RIVEQT_ENABLE_D3D12 ON)
 endif()
+if(NOT DEFINED RIVEQT_ENABLE_METAL)
+    set(RIVEQT_ENABLE_METAL OFF)
+endif()
 
 find_package(Vulkan QUIET)
 find_program(RIVE_GLSLANG_VALIDATOR_EXECUTABLE
@@ -87,6 +90,29 @@ if(WIN32 AND NOT RIVE_FXC_EXECUTABLE)
     message(FATAL_ERROR "fxc.exe was not found. Install the Windows 10/11 SDK shader tools.")
 endif()
 
+if(APPLE AND RIVEQT_ENABLE_METAL)
+    find_program(RIVE_XCRUN_EXECUTABLE NAMES xcrun REQUIRED)
+
+    execute_process(
+        COMMAND "${RIVE_XCRUN_EXECUTABLE}" metal -help
+        RESULT_VARIABLE RIVEQT_METAL_TOOL_RESULT
+        OUTPUT_QUIET
+        ERROR_QUIET
+    )
+    execute_process(
+        COMMAND "${RIVE_XCRUN_EXECUTABLE}" -find metallib
+        RESULT_VARIABLE RIVEQT_METALLIB_TOOL_RESULT
+        OUTPUT_QUIET
+        ERROR_QUIET
+    )
+
+    if(NOT RIVEQT_METAL_TOOL_RESULT EQUAL 0 OR NOT RIVEQT_METALLIB_TOOL_RESULT EQUAL 0)
+        message(FATAL_ERROR
+            "The Xcode Metal Toolchain is not available. "
+            "Install it with: xcodebuild -downloadComponent MetalToolchain")
+    endif()
+endif()
+
 set(RIVE_SHADER_STAMP "${RIVE_GENERATED_SHADER_DIR}/stamp.txt")
 set(RIVE_SHADER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/cmake/generate_rive_shaders.py")
 set(RIVE_SHADER_EXTRA_ARGS)
@@ -98,6 +124,19 @@ if(RIVEQT_ENABLE_VULKAN)
         --glslang-validator=${RIVE_GLSLANG_VALIDATOR_EXECUTABLE}
         --spirv-opt=${RIVE_SPIRV_OPT_EXECUTABLE}
     )
+endif()
+if(APPLE AND RIVEQT_ENABLE_METAL)
+    string(TOLOWER "${CMAKE_OSX_SYSROOT}" RIVEQT_OSX_SYSROOT_LOWER)
+    list(APPEND RIVE_SHADER_EXTRA_ARGS --metal)
+    if(IOS)
+        if(RIVEQT_OSX_SYSROOT_LOWER MATCHES "iphonesimulator")
+            list(APPEND RIVE_SHADER_EXTRA_ARGS --metal-target ios-simulator)
+        else()
+            list(APPEND RIVE_SHADER_EXTRA_ARGS --metal-target ios)
+        endif()
+    else()
+        list(APPEND RIVE_SHADER_EXTRA_ARGS --metal-target macos)
+    endif()
 endif()
 
 add_custom_command(
@@ -260,6 +299,9 @@ list(FILTER RIVE_RUNTIME_SOURCES EXCLUDE REGEX "/command_server\\.cpp$")
 file(GLOB_RECURSE RIVE_RENDERER_SOURCES CONFIGURE_DEPENDS
     "${RIVE_CPP_DIR}/renderer/src/*.cpp"
 )
+file(GLOB_RECURSE RIVE_RENDERER_OBJCXX_SOURCES CONFIGURE_DEPENDS
+    "${RIVE_CPP_DIR}/renderer/src/*.mm"
+)
 file(GLOB_RECURSE RIVE_RENDERER_HEADERS CONFIGURE_DEPENDS
     "${RIVE_CPP_DIR}/renderer/include/*.h"
     "${RIVE_CPP_DIR}/renderer/include/*.hpp"
@@ -269,7 +311,7 @@ file(GLOB RIVE_GLAD_SOURCES CONFIGURE_DEPENDS
     "${RIVE_CPP_DIR}/renderer/glad/*.c"
 )
 
-list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/(metal|webgpu|gl)/")
+list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/(webgpu|gl)/")
 if(NOT WIN32)
     list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/d3d/")
     list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/d3d11/")
@@ -281,6 +323,9 @@ endif()
 if(NOT RIVEQT_ENABLE_D3D12)
     list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/d3d12/")
 endif()
+if(NOT APPLE OR NOT RIVEQT_ENABLE_METAL)
+    list(FILTER RIVE_RENDERER_OBJCXX_SOURCES EXCLUDE REGEX "/metal/")
+endif()
 
 list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/gl/load_gles_extensions\\.cpp$")
 
@@ -288,9 +333,17 @@ target_sources(rive_official
     PRIVATE
         ${RIVE_RUNTIME_SOURCES}
         ${RIVE_RENDERER_SOURCES}
+        ${RIVE_RENDERER_OBJCXX_SOURCES}
         ${RIVE_GLAD_SOURCES}
         ${RIVE_RENDERER_HEADERS}
 )
+
+if(APPLE AND RIVEQT_ENABLE_METAL AND RIVE_RENDERER_OBJCXX_SOURCES)
+    set_source_files_properties(${RIVE_RENDERER_OBJCXX_SOURCES}
+        PROPERTIES
+            COMPILE_OPTIONS "-fobjc-arc"
+    )
+endif()
 
 target_include_directories(rive_official
     PUBLIC
@@ -320,6 +373,14 @@ target_compile_definitions(rive_official
         YOGA_EXPORT=
 )
 
+if(IOS)
+    if(RIVEQT_OSX_SYSROOT_LOWER MATCHES "iphonesimulator")
+        target_compile_definitions(rive_official PUBLIC RIVE_IOS_SIMULATOR)
+    else()
+        target_compile_definitions(rive_official PUBLIC RIVE_IOS)
+    endif()
+endif()
+
 if(ANDROID)
     target_compile_definitions(rive_official
         PUBLIC
@@ -340,6 +401,14 @@ if(RIVEQT_ENABLE_VULKAN)
     else()
         target_link_libraries(rive_official PUBLIC "${RIVEQT_VULKAN_LIBRARY}")
     endif()
+endif()
+if(APPLE AND RIVEQT_ENABLE_METAL)
+    target_link_libraries(rive_official
+        PUBLIC
+            "-framework Metal"
+            "-framework QuartzCore"
+            "-framework Foundation"
+    )
 endif()
 
 target_link_libraries(rive_official

@@ -92,8 +92,8 @@ SPIRV_STANDARD_FRAG_OPT_PARAMS = [
 ]
 
 
-def run(command, cwd=None):
-    subprocess.run(command, cwd=cwd, check=True)
+def run(command, cwd=None, env=None):
+    subprocess.run(command, cwd=cwd, env=env, check=True)
 
 
 def write_stamp(path: Path) -> None:
@@ -294,6 +294,65 @@ def compile_spirv(source_dir: Path,
     )
 
 
+def ensure_metal_toolchain() -> None:
+    guidance = "Install it with: xcodebuild -downloadComponent MetalToolchain"
+    try:
+        subprocess.run(
+            ["xcrun", "metal", "-help"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["xcrun", "-find", "metallib"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(f"The Xcode Metal Toolchain is not available. {guidance}") from exc
+
+
+def compile_metal(source_dir: Path,
+                  out_dir: Path,
+                  ply_path: Path,
+                  targets: list[str]) -> None:
+    if sys.platform != "darwin":
+        raise RuntimeError("Metal shader generation is only supported on Darwin hosts.")
+
+    ensure_metal_toolchain()
+
+    target_map = {
+        "macos": ("rive_pls_macosx_metallib", out_dir / "rive_pls_macosx.metallib.c"),
+        "ios": ("rive_pls_ios_metallib", out_dir / "rive_pls_ios.metallib.c"),
+        "ios-simulator": ("rive_pls_ios_simulator_metallib",
+                           out_dir / "rive_pls_ios_simulator.metallib.c"),
+    }
+    selected_targets = targets or ["macos"]
+
+    for target in selected_targets:
+        make_target, required_output = target_map[target]
+        run(
+            [
+                "make",
+                "-C",
+                str(source_dir),
+                f"OUT={out_dir}",
+                f"FLAGS=-p {ply_path}",
+                make_target,
+            ],
+        )
+
+        required_outputs = [
+            out_dir / "draw_combinations.metal",
+            required_output,
+        ]
+        missing_outputs = [path for path in required_outputs if not path.exists()]
+        if missing_outputs:
+            missing = ", ".join(str(path) for path in missing_outputs)
+            raise RuntimeError(f"Metal shader generation did not produce: {missing}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-dir", required=True)
@@ -302,6 +361,12 @@ def main() -> int:
     parser.add_argument("--fxc")
     parser.add_argument("--glslang-validator")
     parser.add_argument("--spirv-opt")
+    parser.add_argument("--metal", action="store_true")
+    parser.add_argument(
+        "--metal-target",
+        action="append",
+        choices=["macos", "ios", "ios-simulator"],
+    )
     args = parser.parse_args()
 
     source_dir = Path(args.source_dir).resolve()
@@ -318,6 +383,8 @@ def main() -> int:
                       out_dir,
                       Path(args.glslang_validator).resolve(),
                       Path(args.spirv_opt).resolve())
+    if args.metal:
+        compile_metal(source_dir, out_dir, ply_path, args.metal_target or [])
 
     write_stamp(out_dir / "stamp.txt")
     return 0

@@ -2,6 +2,7 @@ qt_add_executable(riveqtquick_icon_grid
     main.cpp
     icongridmodel.cpp
     icongridmodel.h
+    "${CMAKE_SOURCE_DIR}/examples/common/exampleappsupport.cpp"
     "${CMAKE_SOURCE_DIR}/3rdparty/rive-cpp/utils/no_op_factory.cpp"
 )
 
@@ -17,20 +18,22 @@ target_link_libraries(riveqtquick_icon_grid
         RiveQtQuick
         Rive::Official
 )
+target_include_directories(riveqtquick_icon_grid
+    PRIVATE
+        "${CMAKE_SOURCE_DIR}/examples/common"
+)
 target_compile_definitions(riveqtquick_icon_grid
     PRIVATE
         RIVEQT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+        RIVEQT_BUILD_QML_IMPORT_DIR="${CMAKE_BINARY_DIR}/src"
 )
 
 add_dependencies(riveqtquick_icon_grid RiveQtQuickPlugin)
-add_custom_command(
-    TARGET riveqtquick_icon_grid
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/Main.qml"
-        "$<TARGET_FILE_DIR:riveqtquick_icon_grid>/Main.qml"
-    COMMENT "Copying icon grid Main.qml"
+riveqt_add_example_app_support(riveqtquick_icon_grid
+    QML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/Main.qml"
+    IOS_MODULE_URI "RiveQtQuickExamples.IconGrid"
+    BUNDLE_SUFFIX "icon-grid"
+    QMLDIR "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESOURCE_FILES
+        "${CMAKE_SOURCE_DIR}/tests/assets/rive/25691-49048-interactive-icon-set.riv"
 )
-riveqt_add_windeployqt(riveqtquick_icon_grid QMLDIR "${CMAKE_CURRENT_SOURCE_DIR}")
-riveqt_deploy_local_qml_module(riveqtquick_icon_grid RiveQtQuick "${CMAKE_BINARY_DIR}/src/RiveQtQuick" RiveQtQuickPlugin)
-riveqt_deploy_runtime_dll(riveqtquick_icon_grid RiveQtQuick)

@@ -26,6 +26,17 @@ extern void qml_register_types_RiveQtQuick();
 
 namespace
 {
+QSGRendererInterface::GraphicsApi defaultGraphicsApi()
+{
+#if defined(Q_OS_WIN)
+    return QSGRendererInterface::Direct3D11;
+#elif defined(Q_OS_MACOS) || defined(Q_OS_IOS)
+    return QSGRendererInterface::Metal;
+#else
+    return QSGRendererInterface::Unknown;
+#endif
+}
+
 void configureDebugFailureReporting()
 {
 #ifdef Q_OS_WIN
@@ -44,7 +55,11 @@ void configureDebugFailureReporting()
 QSGRendererInterface::GraphicsApi graphicsApiFromName(const QString& name, QString* errorString = nullptr)
 {
     const QString lowered = name.trimmed().toLower();
-    if (lowered.isEmpty() || lowered == QStringLiteral("d3d11"))
+    if (lowered.isEmpty())
+    {
+        return defaultGraphicsApi();
+    }
+    if (lowered == QStringLiteral("d3d11"))
     {
         return QSGRendererInterface::Direct3D11;
     }
@@ -52,9 +67,13 @@ QSGRendererInterface::GraphicsApi graphicsApiFromName(const QString& name, QStri
     {
         return QSGRendererInterface::Direct3D12;
     }
-    if (lowered == QStringLiteral ("vulkan"))
-      {
+    if (lowered == QStringLiteral("vulkan"))
+    {
         return QSGRendererInterface::Vulkan;
+    }
+    if (lowered == QStringLiteral("metal"))
+    {
+        return QSGRendererInterface::Metal;
     }
 
     if (errorString)
@@ -84,7 +103,7 @@ QSGRendererInterface::GraphicsApi graphicsApiFromCommandLine(int argc,
         }
     }
 
-    return QSGRendererInterface::Direct3D11;
+    return defaultGraphicsApi();
 }
 
 QString toQmlStringLiteral(const QString& value)
@@ -571,6 +590,7 @@ int main(int argc, char** argv)
     qml_register_types_RiveQtQuick();
     QQmlEngine engine;
     const QString appDir = QCoreApplication::applicationDirPath();
+    engine.addImportPath(QStringLiteral(RIVEQT_BUILD_QML_IMPORT_DIR));
     engine.addImportPath(appDir + "/qml");
     engine.addImportPath(appDir);
 

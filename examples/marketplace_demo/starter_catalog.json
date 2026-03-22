@@ -1,0 +1,58 @@
+[
+  {
+    "id": "starter-hello-world",
+    "title": "Hello World",
+    "detailUrl": "https://rive.app/",
+    "author": "Bundled sample",
+    "isForHire": false,
+    "license": "Local sample",
+    "tags": ["starter", "text", "basic"],
+    "description": "A tiny bundled file so the marketplace demo always has something ready to preview.",
+    "previewImageUrl": "examples/marketplace_demo/posters/hello_world.svg",
+    "riveSource": "tests/assets/rive/hello_world.riv",
+    "availability": "local",
+    "reactionCount": 0
+  },
+  {
+    "id": "starter-interactive-icons",
+    "title": "Interactive Icon Set",
+    "detailUrl": "https://rive.app/",
+    "author": "Bundled sample",
+    "isForHire": false,
+    "license": "Local sample",
+    "tags": ["starter", "icons", "interactive"],
+    "description": "A bundled interactive icon file that works well as a phone-sized starter preview.",
+    "previewImageUrl": "examples/marketplace_demo/posters/interactive_icons.svg",
+    "riveSource": "tests/assets/rive/25691-49048-interactive-icon-set.riv",
+    "availability": "local",
+    "reactionCount": 0
+  },
+  {
+    "id": "starter-state-machine-triggers",
+    "title": "State Machine Triggers",
+    "detailUrl": "https://rive.app/",
+    "author": "Bundled sample",
+    "isForHire": false,
+    "license": "Local sample",
+    "tags": ["starter", "state machine", "inputs"],
+    "description": "A bundled file with triggers and controls so the inspector page has something interesting to drive.",
+    "previewImageUrl": "examples/marketplace_demo/posters/state_machine_triggers.svg",
+    "riveSource": "tests/assets/rive/state_machine_triggers.riv",
+    "availability": "local",
+    "reactionCount": 0
+  },
+  {
+    "id": "starter-data-binding",
+    "title": "Data Binding Test",
+    "detailUrl": "https://rive.app/",
+    "author": "Bundled sample",
+    "isForHire": false,
+    "license": "Local sample",
+    "tags": ["starter", "view model", "data"],
+    "description": "A bundled file with data binding so the demo still feels alive before the live marketplace feed arrives.",
+    "previewImageUrl": "examples/marketplace_demo/posters/data_binding.svg",
+    "riveSource": "tests/assets/rive/data_binding_test.riv",
+    "availability": "local",
+    "reactionCount": 0
+  }
+]
