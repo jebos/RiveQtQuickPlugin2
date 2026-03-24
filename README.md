@@ -1,94 +1,162 @@
 # RiveQtQuickPlugin2
 
-This is the second pass at a Rive Qt Quick Plugin.
+`RiveQtQuickPlugin2` is a Qt Quick plugin for playing Rive `.riv` files with
+the official Rive runtime and renderer. The repository name is
+`RiveQtQuickPlugin2`, but the QML import remains `RiveQtQuick`.
 
-It plays Rive's `.riv` files in Qt Quick by using the official Rive runtime and
-renderer. The project is called `RiveQtQuickPlugin2`, but the QML import stays
-`RiveQtQuick`. 
+The goal is to keep rendering fast by integrating directly with Qt Quick's RHI
+backends and sharing rendering resources across all `RiveItem` instances in the
+scene.
 
-The target here is to build a highperformance plugin, utilizing the official implementation in a qtquickscene.
-All Rive drawing share a context, meaning they render extremly fast.
-
-```
+```qml
 import RiveQtQuick
 
 RiveItem {
     source: "qrc:/animations/example.riv"
 }
 ```
+
+## Highlights
+
+- Qt `6.6.0` and newer
+- official Rive runtime integration
+- Qt Quick / RHI based rendering
+- shared rendering context across all Rive items
+- `.riv` file caching to avoid duplicate loads
+- example apps for quick manual testing
+- unit tests and QML tests
+
+### Supported backends
+
+- Direct3D 11 on Windows
+- Direct3D 12 when available in the bundled Rive runtime
+- Vulkan when available in the bundled Rive runtime
+- Metal on macOS and iOS
+
+### Not supported
+
+- OpenGL
+- software rendering
+
+Right now the project is exercised most heavily on Windows and Apple platforms.
+Release builds are the ones that matter for performance. Debug builds are fine
+for development, but can be noticeably slower on complex animations.
+
 ## The Icon Grid demo
 
-This is a table view with 100x100 buttons. Each button has a RiveItem on it. You find the code in the examples.
+The icon grid demo shows a `100 x 100` table of buttons, each with its own live
+`RiveItem`.
 
 https://github.com/user-attachments/assets/077cfbf9-a3d2-4a5f-93f5-b1051273a8dc
 
-## What you get
-
-- built for Qt `6.6.0` and newer
-- uses the official Rive runtime
-- Qt Quick / RHI based rendering
-- a couple of small example apps to test things quickly
-- shared context rendering between all rive elements
-- caching of riv files so the plugin does not load them more than once
-- Android Support 
-- Vulkan
-- Direct3d11 and 12
-
--> no opengl support
-
--> no metal support
-
--> no software render support
-
-Right now the project is mainly exercised on Windows. Release builds are the
-ones that really matter for performance, debug builds are okay, but can be slow on complex animations.
-
 ## Project layout
 
-- `src/RiveQtQuick` is the plugin itself
-- `examples` has the small demo apps
-- `tests` has unit and QML coverage
-- `scripts` has the helper scripts
+- `src/RiveQtQuick` contains the plugin
+- `examples` contains the demo applications
+- `tests` contains unit and QML coverage
+- `scripts` contains helper scripts
+- `cmake` contains platform and dependency setup
 
 ## Examples
 
 - `riveqtquick_minimal` is the smallest viewer
-- `riveqtquick_marketplace_demo` is the marketplace browser / inspector demo loading elements live from the official rive marketplace
-- `riveqtquick_icon_grid` shows a big grid of Qt Quick buttons with live Rive
-  icons inside
+- `riveqtquick_interactive` is a compact interactive demo app
+- `riveqtquick_marketplace_demo` is a marketplace browser / inspector demo that loads assets from the official Rive marketplace
+- `riveqtquick_icon_grid` shows a large grid of Qt Quick buttons with live Rive icons inside
 
 ## Third-party setup
 
-The repo expects the `3rdparty/` folder to be present.
+The repository expects the `3rdparty/` folder to be present.
 
-If you want to fetch or refresh it:
+Fetch or refresh it with:
 
+```bash
+python ./scripts/bootstrap.py
 ```
-python .\scripts\bootstrap.py
-```
+
+## Configure options
+
+The top-level CMake project exposes a few useful switches:
+
+- `RIVEQT_BUILD_EXAMPLES=ON|OFF` builds the example applications
+- `RIVEQT_BUILD_TESTS=ON|OFF` builds the unit and QML tests
+- `RIVEQT_ENABLE_METAL=ON|OFF` enables the Metal backend on Apple platforms
+- `RIVEQT_IOS_BUNDLE_ID_PREFIX=<prefix>` sets the generated iOS example app bundle identifiers
+- `RIVEQT_IOS_DEVELOPMENT_TEAM=<team-id>` sets an explicit Apple development team for iOS signing
+
+`RIVEQT_ENABLE_METAL` defaults to `ON` on Apple platforms and `OFF` elsewhere.
 
 ## Build
 
+### Windows
+
 Typical Windows build with MSVC 2022:
 
-```
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH=.....<qtpath>.....
+```bash
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH=<qt-path>
 cmake --build build --config Release --target RiveQtQuick
 ```
 
-If you want the demo apps too:
+Build the examples:
 
+```bash
+cmake --build build --config Release --target \
+    riveqtquick_minimal \
+    riveqtquick_interactive \
+    riveqtquick_marketplace_demo \
+    riveqtquick_icon_grid
 ```
-cmake --build build --config Release --target riveqtquick_minimal
-cmake --build build --config Release --target riveqtquick_marketplace_demo
-cmake --build build --config Release --target riveqtquick_icon_grid
+
+### macOS
+
+Example Ninja build on macOS with Metal enabled:
+
+```bash
+cmake -S . -B build-macos -G Ninja \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_PREFIX_PATH=<qt-path> \
+    -RIVEQT_BUILD_EXAMPLES=ON \
+    -RIVEQT_BUILD_TESTS=ON
+cmake --build build-macos --target RiveQtQuick
 ```
+
+### iOS
+
+For iOS, configure with Qt's iOS toolchain file and a host Qt installation:
+
+```bash
+cmake -S . -B build-ios -G Xcode \
+    -DCMAKE_TOOLCHAIN_FILE=<qt-ios>/lib/cmake/Qt6/qt.toolchain.cmake \
+    -DQT_HOST_PATH=<qt-host-path> \
+    -DCMAKE_OSX_SYSROOT=iphoneos \
+    -RIVEQT_BUILD_EXAMPLES=ON \
+    -RIVEQT_BUILD_TESTS=OFF
+```
+
+The CMake setup includes Apple-specific handling for Qt kits that do not ship
+arm64 iOS Simulator frameworks. If your simulator build links against device
+frameworks by mistake, reconfigure for `x86_64` simulator builds or use
+`iphoneos` for device builds.
 
 ## Tests
 
+```bash
+ctest --test-dir build --output-on-failure
 ```
+
+Multi-config generators such as Visual Studio can still use:
+
+```bash
 ctest --test-dir build -C Debug --output-on-failure
 ```
+
+## CI
+
+The repository includes GitHub Actions workflows for:
+
+- the general CI build and test matrix
+- Apple-specific macOS build/test coverage
+- unsigned iOS example app builds
 
 ## License
 
