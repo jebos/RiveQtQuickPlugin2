@@ -20,6 +20,7 @@ build-*/
 3rdparty/rive-cpp/renderer/src/shaders/*
 !3rdparty/rive-cpp/renderer/src/shaders/common.glsl
 !3rdparty/rive-cpp/renderer/src/shaders/glsl.glsl
+!3rdparty/rive-cpp/renderer/src/shaders/minify.py
 
 *.user
 *.suo

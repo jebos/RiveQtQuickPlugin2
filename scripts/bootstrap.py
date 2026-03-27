@@ -25,6 +25,7 @@ RIVE_RUNTIME_OVERLAY_FILES = [
   "renderer/src/gl/render_target_gl.cpp",
   "renderer/src/shaders/common.glsl",
   "renderer/src/shaders/glsl.glsl",
+  "renderer/src/shaders/minify.py",
 ]
 
 PREMAKE_DEPENDENCY_SPECS = [
