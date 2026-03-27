@@ -484,15 +484,31 @@ INLINE half4 dst_color_fetch(half4x4 dstSamples, int sampleMask)
     else
     {
         // Average together only the samples that are inside the sample mask.
-        int4 sampleMaskBits = int4(sampleMask) & int4(1, 2, 4, 8);
-        half4 mask = float4(notEqual(sampleMaskBits, int4(0)));
-        half4 ret = MUL(dstSamples, mask);
-        // Since the sample mask can only have 4 bits, counting them is faster
-        // this way on Galaxy S24 than calling bitCount().
-        int numSamples = (sampleMask & 5) + ((sampleMask >> 1) & 5);
-        numSamples = (numSamples & 3) + (numSamples >> 2);
-        ret *= 1. / float(numSamples);
-        return ret;
+        // Keep this scalar and explicit; some desktop GLSL parsers are picky
+        // about the minified vector-bitmask form here.
+        half4 ret = make_half4(.0);
+        int numSamples = 0;
+        if ((sampleMask & 1) != 0)
+        {
+            ret += dstSamples[0];
+            ++numSamples;
+        }
+        if ((sampleMask & 2) != 0)
+        {
+            ret += dstSamples[1];
+            ++numSamples;
+        }
+        if ((sampleMask & 4) != 0)
+        {
+            ret += dstSamples[2];
+            ++numSamples;
+        }
+        if ((sampleMask & 8) != 0)
+        {
+            ret += dstSamples[3];
+            ++numSamples;
+        }
+        return ret * (1. / float(numSamples));
     }
 }
 #endif // @FRAGMENT && @RENDER_MODE_MSAA && !@FIXED_FUNCTION_COLOR_OUTPUT
