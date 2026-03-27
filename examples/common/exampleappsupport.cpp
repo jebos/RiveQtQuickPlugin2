@@ -44,7 +44,7 @@ void configureGraphicsApi()
         QSurfaceFormat format;
         format.setRenderableType(QSurfaceFormat::OpenGL);
         format.setProfile(QSurfaceFormat::CoreProfile);
-        format.setVersion(4, 2);
+        format.setVersion(4, 1);
         format.setDepthBufferSize(24);
         format.setStencilBufferSize(8);
         QSurfaceFormat::setDefaultFormat(format);
