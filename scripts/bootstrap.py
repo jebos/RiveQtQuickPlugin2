@@ -18,6 +18,14 @@ RIVE_RUNTIME_URL = "https://github.com/rive-app/rive-runtime.git"
 RIVE_RUNTIME_REV = "3218e95af4b20064d3f4c026ed3d8cf66ed4adb8"
 RIVE_RUNTIME_CHECK = "include/rive/file.hpp"
 RIVE_RUNTIME_ENV = "RIVEQT_RIVE_RUNTIME_REV"
+RIVE_RUNTIME_OVERLAY_FILES = [
+  "renderer/glad/glad_custom.c",
+  "renderer/src/gl/gl_state.cpp",
+  "renderer/src/gl/render_context_gl_impl.cpp",
+  "renderer/src/gl/render_target_gl.cpp",
+  "renderer/src/shaders/common.glsl",
+  "renderer/src/shaders/glsl.glsl",
+]
 
 PREMAKE_DEPENDENCY_SPECS = [
   {
@@ -132,6 +140,23 @@ def parse_premake_dependency(
   raise RuntimeError(f"Could not derive {variable} from {premake_path}")
 
 
+def capture_rive_runtime_overlays() -> dict[str, bytes]:
+  overlays: dict[str, bytes] = {}
+  overlay_root = ROOT / RIVE_RUNTIME_PATH
+  for relative_path in RIVE_RUNTIME_OVERLAY_FILES:
+    source_path = overlay_root / relative_path
+    if source_path.exists():
+      overlays[relative_path] = source_path.read_bytes()
+  return overlays
+
+
+def apply_rive_runtime_overlays(target: Path, overlays: dict[str, bytes]) -> None:
+  for relative_path, contents in overlays.items():
+    destination = target / relative_path
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(contents)
+
+
 def gather_rive_dependencies(rive_cpp_dir: Path) -> list[dict[str, object]]:
   entries: list[dict[str, object]] = []
   for spec in PREMAKE_DEPENDENCY_SPECS:
@@ -176,6 +201,9 @@ def apply_dependency_compatibility(target: Path, entry: dict[str, object]) -> No
 def ensure_git_dependency(entry: dict[str, object], refresh: bool) -> None:
   target = ROOT / str(entry["path"])
   name = str(entry["path"])
+  overlays: dict[str, bytes] = {}
+  if name == RIVE_RUNTIME_PATH:
+    overlays = capture_rive_runtime_overlays()
   if target.exists() and refresh:
     shutil.rmtree(target)
 
@@ -183,6 +211,8 @@ def ensure_git_dependency(entry: dict[str, object], refresh: bool) -> None:
     apply_dependency_compatibility(target, entry)
 
   if target.exists() and dependency_ready(target, entry):
+    if overlays:
+      apply_rive_runtime_overlays(target, overlays)
     print(f"skip {name} (already present)")
     return
   if target.exists():
@@ -239,6 +269,8 @@ def ensure_git_dependency(entry: dict[str, object], refresh: bool) -> None:
       target,
       ignore=shutil.ignore_patterns(".git"),
     )
+  if overlays:
+    apply_rive_runtime_overlays(target, overlays)
   apply_dependency_compatibility(target, entry)
   if not dependency_ready(target, entry):
     raise RuntimeError(f"bootstrap copied {name}, but the expected files are still missing")
@@ -299,4 +331,3 @@ def main() -> int:
 
 if __name__ == "__main__":
   raise SystemExit(main())
-
