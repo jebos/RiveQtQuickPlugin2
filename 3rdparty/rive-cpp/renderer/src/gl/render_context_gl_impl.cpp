@@ -2635,11 +2635,11 @@ std::unique_ptr<RenderContext> RenderContextGLImpl::MakeContext(
     }
     else
     {
+        // The desktop fallback path only requires the 4.1-era feature set.
+        // Newer capabilities like image load/store are still detected below
+        // and enabled opportunistically when the driver exposes them.
         int minimumDesktopMajor = 4;
-        int minimumDesktopMinor = 2;
-#if defined(__APPLE__) && defined(RIVE_DESKTOP_GL)
-        minimumDesktopMinor = 1;
-#endif
+        int minimumDesktopMinor = 1;
         if (!capabilities.isContextVersionAtLeast(minimumDesktopMajor,
                                                   minimumDesktopMinor))
         {
