@@ -108,18 +108,24 @@ jobs:
             libfontconfig1 \
             libgl1-mesa-dev \
             libglib2.0-0t64 \
+            libx11-xcb1 \
             libxkbcommon-dev \
             libxkbcommon-x11-0 \
             libxkbcommon-x11-dev \
             libxcb-cursor0 \
+            libxcb-glx0 \
             libxcb-icccm4 \
             libxcb-image0 \
             libxcb-keysyms1 \
             libxcb-randr0 \
             libxcb-render-util0 \
             libxcb-shape0 \
+            libxcb-shm0 \
+            libxcb-sync1 \
+            libxcb-xfixes0 \
             libxcb-xinerama0 \
             libxcb-xinput0 \
+            libxcb-xkb1 \
             ninja-build \
             xvfb
 
@@ -184,4 +190,5 @@ jobs:
 
       - name: Test
         run: |
-          QT_QPA_PLATFORM=offscreen ctest --test-dir build-ci-linux --output-on-failure --timeout 180
+          QT_QPA_PLATFORM=offscreen ctest --test-dir build-ci-linux --output-on-failure --timeout 180 -E '^riveqtquick_qml_tests_opengl$'
+          xvfb-run -a env QT_QPA_PLATFORM=xcb ctest --test-dir build-ci-linux --output-on-failure --timeout 180 -R '^riveqtquick_qml_tests_opengl$'

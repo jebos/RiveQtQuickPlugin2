@@ -1,10 +1,16 @@
 #include <QGuiApplication>
 #include <QAbstractItemModel>
+#include <QColor>
 #include <QDir>
 #include <QDebug>
 #include <QEventLoop>
 #include <QImage>
 #include <QElapsedTimer>
+#include <QList>
+#include <QLoggingCategory>
+#include <QMutex>
+#include <QSet>
+#include <QSurfaceFormat>
 #include <QTimer>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -26,6 +32,84 @@ extern void qml_register_types_RiveQtQuick();
 
 namespace
 {
+struct LoggedMessage
+{
+    QByteArray category;
+    QString text;
+};
+
+class LogCollector
+{
+public:
+    static LogCollector& instance()
+    {
+        static LogCollector collector;
+        return collector;
+    }
+
+    void install()
+    {
+        if (m_installed)
+        {
+            return;
+        }
+        m_previousHandler = qInstallMessageHandler(&LogCollector::messageHandler);
+        m_installed = true;
+    }
+
+    int size() const
+    {
+        QMutexLocker locker(&m_mutex);
+        return m_messages.size();
+    }
+
+    int countSince(int startIndex, const QByteArray& category, const QString& token) const
+    {
+        QMutexLocker locker(&m_mutex);
+        int count = 0;
+        for (int index = qMax(0, startIndex); index < m_messages.size(); ++index)
+        {
+            const LoggedMessage& message = m_messages.at(index);
+            if ((category.isEmpty() || message.category == category) &&
+                message.text.contains(token))
+            {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+private:
+    static void messageHandler(QtMsgType type,
+                               const QMessageLogContext& context,
+                               const QString& message)
+    {
+        LogCollector& collector = instance();
+        {
+            QMutexLocker locker(&collector.m_mutex);
+            collector.m_messages.push_back(
+                {context.category ? QByteArray(context.category) : QByteArray(),
+                 message});
+        }
+        if (collector.m_previousHandler)
+        {
+            collector.m_previousHandler(type, context, message);
+        }
+    }
+
+    mutable QMutex m_mutex;
+    QVector<LoggedMessage> m_messages;
+    QtMessageHandler m_previousHandler = nullptr;
+    bool m_installed = false;
+};
+
+struct FrameSampleStats
+{
+    int backgroundSamples = 0;
+    int changedSamples = 0;
+    QSet<QRgb> quantizedChangedColors;
+};
+
 QSGRendererInterface::GraphicsApi defaultGraphicsApi()
 {
 #if defined(Q_OS_WIN)
@@ -70,6 +154,10 @@ QSGRendererInterface::GraphicsApi graphicsApiFromName(const QString& name, QStri
     if (lowered == QStringLiteral("vulkan"))
     {
         return QSGRendererInterface::Vulkan;
+    }
+    if (lowered == QStringLiteral("opengl") || lowered == QStringLiteral("gl"))
+    {
+        return QSGRendererInterface::OpenGL;
     }
     if (lowered == QStringLiteral("metal"))
     {
@@ -117,6 +205,53 @@ QString toQmlStringLiteral(const QString& value)
 QString assetUrl(const QString& filename)
 {
     return QUrl::fromLocalFile(QStringLiteral(RIVEQT_TEST_ASSET_DIR) + "/" + filename).toString();
+}
+
+QString vendoredAssetUrl(const QString& filename)
+{
+    return QUrl::fromLocalFile(QStringLiteral(RIVEQT_VENDOR_RIVE_TEST_ASSET_DIR) + "/" + filename).toString();
+}
+
+QRgb quantizeColor(const QColor& color)
+{
+    auto quantizeChannel = [](int value) {
+        return (value / 32) * 32;
+    };
+    return qRgb(quantizeChannel(color.red()),
+                quantizeChannel(color.green()),
+                quantizeChannel(color.blue()));
+}
+
+FrameSampleStats sampleFrame(const QImage& frame,
+                             const QRect& sampleRect,
+                             const QColor& background,
+                             int step = 8)
+{
+    FrameSampleStats stats;
+    const QRect boundedRect = sampleRect.intersected(frame.rect());
+    if (boundedRect.isEmpty())
+    {
+        return stats;
+    }
+
+    for (int y = boundedRect.y(); y < boundedRect.y() + boundedRect.height(); y += step)
+    {
+        for (int x = boundedRect.x(); x < boundedRect.x() + boundedRect.width(); x += step)
+        {
+            const QColor pixel = frame.pixelColor(x, y);
+            if (pixel == background)
+            {
+                ++stats.backgroundSamples;
+            }
+            else
+            {
+                ++stats.changedSamples;
+                stats.quantizedChangedColors.insert(quantizeColor(pixel));
+            }
+        }
+    }
+
+    return stats;
 }
 
 template <typename Predicate>
@@ -187,11 +322,57 @@ bool createAndValidate(QQmlEngine& engine, const QByteArray& source, const char*
     return true;
 }
 
-bool renderAndValidate(QQmlEngine& engine,
-                       const QString& assetFile,
-                       const QSize& size,
-                       const QColor& background,
-                       const char* label)
+bool waitForRiveViewsReady(QQuickWindow* window,
+                           const QList<QObject*>& riveViews,
+                           const char* label)
+{
+    waitFor([window]() { return window && window->isExposed(); }, 5000);
+    const bool ready = waitFor(
+        [window, riveViews]() {
+            if (!window)
+            {
+                return false;
+            }
+            window->requestUpdate();
+            for (QObject* riveView : riveViews)
+            {
+                if (!riveView || riveView->property("status").toInt() == 1)
+                {
+                    return false;
+                }
+            }
+            return true;
+        },
+        15000);
+
+    bool allReady = ready;
+    for (int index = 0; index < riveViews.size(); ++index)
+    {
+        QObject* riveView = riveViews.at(index);
+        const int status = riveView ? riveView->property("status").toInt() : -1;
+        if (status != 2)
+        {
+            std::fprintf(stderr,
+                         "%s-window[%d]: status=%d error=%s\n",
+                         label,
+                         index,
+                         status,
+                         riveView ? qPrintable(riveView->property("errorString").toString())
+                                  : "riveView missing");
+            std::fflush(stderr);
+            allReady = false;
+        }
+    }
+
+    return allReady;
+}
+
+bool renderAssetAndCollectFrame(QQmlEngine& engine,
+                                const QString& sourceUrl,
+                                const QSize& size,
+                                const QColor& background,
+                                const char* label,
+                                QImage* frameOut)
 {
     const QString source = QString(R"(
         import QtQuick
@@ -215,7 +396,7 @@ bool renderAndValidate(QQmlEngine& engine,
                                .arg(size.width())
                                .arg(size.height())
                                .arg(background.name())
-                               .arg(toQmlStringLiteral(assetUrl(assetFile)));
+                               .arg(toQmlStringLiteral(sourceUrl));
 
     QQmlComponent component(&engine);
     component.setData(source.toUtf8(), QUrl(QStringLiteral("memory:%1-window.qml").arg(QString::fromUtf8(label))));
@@ -256,25 +437,8 @@ bool renderAndValidate(QQmlEngine& engine,
     }
 
     window->show();
-    window->requestUpdate();
-
-    waitFor([window]() { return window->isExposed(); }, 5000);
-    const bool ready = waitFor(
-        [window, riveView]() {
-            window->requestUpdate();
-            return riveView->property("status").toInt() != 1;
-        },
-        15000);
-
-    const int status = riveView->property("status").toInt();
-    if (!ready || status != 2)
+    if (!waitForRiveViewsReady(window, {riveView}, label))
     {
-        std::fprintf(stderr,
-                     "%s-window: status=%d error=%s\n",
-                     label,
-                     status,
-                     qPrintable(riveView->property("errorString").toString()));
-        std::fflush(stderr);
         return false;
     }
 
@@ -292,21 +456,206 @@ bool renderAndValidate(QQmlEngine& engine,
         return false;
     }
 
-    int changedPixels = 0;
-    for (int y = 0; y < frame.height(); y += 8)
+    if (frameOut)
     {
-        for (int x = 0; x < frame.width(); x += 8)
-        {
-            if (frame.pixelColor(x, y) != background)
-            {
-                ++changedPixels;
-            }
-        }
+        *frameOut = frame;
     }
 
-    if (changedPixels < 25)
+    window->hide();
+    return true;
+}
+
+bool renderAndValidate(QQmlEngine& engine,
+                       const QString& assetFile,
+                       const QSize& size,
+                       const QColor& background,
+                       const char* label)
+{
+    QImage frame;
+    if (!renderAssetAndCollectFrame(engine,
+                                    assetUrl(assetFile),
+                                    size,
+                                    background,
+                                    label,
+                                    &frame))
     {
-        std::fprintf(stderr, "%s-window: rendered frame looked blank (%d changed samples)\n", label, changedPixels);
+        return false;
+    }
+
+    const FrameSampleStats stats = sampleFrame(frame, frame.rect(), background);
+    if (stats.changedSamples < 25)
+    {
+        std::fprintf(stderr, "%s-window: rendered frame looked blank (%d changed samples)\n", label, stats.changedSamples);
+        std::fflush(stderr);
+        return false;
+    }
+
+    return true;
+}
+
+bool renderBlendAndValidate(QQmlEngine& engine,
+                            const QSize& size,
+                            const QColor& background,
+                            const char* label)
+{
+    QImage frame;
+    if (!renderAssetAndCollectFrame(engine,
+                                    vendoredAssetUrl(QStringLiteral("group_effect.riv")),
+                                    size,
+                                    background,
+                                    label,
+                                    &frame))
+    {
+        return false;
+    }
+
+    const QRect itemRect(12, 12, size.width() - 24, size.height() - 24);
+    const FrameSampleStats stats = sampleFrame(frame, itemRect, background, 6);
+    if (stats.changedSamples < 300 || stats.backgroundSamples < 100 ||
+        stats.quantizedChangedColors.size() < 5)
+    {
+        const int colorCount = static_cast<int>(stats.quantizedChangedColors.size());
+        const QString dumpPath =
+            QDir::temp().filePath(QStringLiteral("%1_opengl_blend_failure.png")
+                                      .arg(QString::fromUtf8(label)));
+        frame.save(dumpPath);
+        std::fprintf(stderr,
+                     "%s-window: blend regression check failed (changed=%d background=%d colors=%d dump=%s)\n",
+                     label,
+                     stats.changedSamples,
+                     stats.backgroundSamples,
+                     colorCount,
+                     qPrintable(dumpPath));
+        std::fflush(stderr);
+        return false;
+    }
+
+    return true;
+}
+
+bool renderAndValidateSharedContext(QQmlEngine& engine,
+                                    const QSize& size,
+                                    const QColor& background,
+                                    const char* label)
+{
+    const int logStart = LogCollector::instance().size();
+    const QString source = QString(R"(
+        import QtQuick
+        import QtQuick.Window
+        import RiveQtQuick
+        Window {
+            width: %1
+            height: %2
+            visible: true
+            color: "%3"
+            Row {
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 12
+                RiveItem {
+                    objectName: "riveView1"
+                    width: (parent.width - parent.spacing) / 2
+                    height: parent.height
+                    fit: RiveItem.Contain
+                    source: %4
+                }
+                RiveItem {
+                    objectName: "riveView2"
+                    width: (parent.width - parent.spacing) / 2
+                    height: parent.height
+                    fit: RiveItem.Contain
+                    source: %4
+                }
+            }
+        }
+    )")
+                               .arg(size.width())
+                               .arg(size.height())
+                               .arg(background.name())
+                               .arg(toQmlStringLiteral(assetUrl(QStringLiteral("hello_world.riv"))));
+
+    QQmlComponent component(&engine);
+    component.setData(source.toUtf8(), QUrl(QStringLiteral("memory:%1-shared-context.qml").arg(QString::fromUtf8(label))));
+    if (component.isLoading())
+    {
+        QEventLoop loop;
+        QObject::connect(&component, &QQmlComponent::statusChanged, &loop, [&](QQmlComponent::Status status) {
+            if (status != QQmlComponent::Loading)
+            {
+                loop.quit();
+            }
+        });
+        loop.exec();
+    }
+
+    if (!component.isReady())
+    {
+        std::fprintf(stderr, "%s-shared-context: %s\n", label, qPrintable(component.errorString()));
+        std::fflush(stderr);
+        return false;
+    }
+
+    QScopedPointer<QObject> root(component.create());
+    auto* window = qobject_cast<QQuickWindow*>(root.get());
+    if (!window)
+    {
+        std::fprintf(stderr, "%s-shared-context: root is not a QQuickWindow\n", label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    QObject* riveView1 = window->findChild<QObject*>(QStringLiteral("riveView1"));
+    QObject* riveView2 = window->findChild<QObject*>(QStringLiteral("riveView2"));
+    if (!riveView1 || !riveView2)
+    {
+        std::fprintf(stderr, "%s-shared-context: rive views not found\n", label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    window->show();
+    if (!waitForRiveViewsReady(window, {riveView1, riveView2}, label))
+    {
+        return false;
+    }
+
+    waitFor([window]() {
+        window->requestUpdate();
+        return window->isExposed();
+    }, 250);
+    QCoreApplication::sendPostedEvents(nullptr, 0);
+
+    const QImage frame = window->grabWindow();
+    if (frame.isNull())
+    {
+        std::fprintf(stderr, "%s-shared-context: grabWindow returned null\n", label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    const FrameSampleStats stats = sampleFrame(frame, frame.rect(), background);
+    if (stats.changedSamples < 25)
+    {
+        std::fprintf(stderr, "%s-shared-context: rendered frame looked blank\n", label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    const int createdCount = LogCollector::instance().countSince(
+        logStart,
+        QByteArrayLiteral("rive.backend.gl"),
+        QStringLiteral("created shared OpenGL render context"));
+    const int reusedCount = LogCollector::instance().countSince(
+        logStart,
+        QByteArrayLiteral("rive.backend.gl"),
+        QStringLiteral("reusing shared OpenGL render context"));
+    if (createdCount != 1 || reusedCount < 1)
+    {
+        std::fprintf(stderr,
+                     "%s-shared-context: expected one create and at least one reuse log (create=%d reuse=%d)\n",
+                     label,
+                     createdCount,
+                     reusedCount);
         std::fflush(stderr);
         return false;
     }
@@ -584,9 +933,29 @@ int main(int argc, char** argv)
         return 10;
     }
 
+    if (graphicsApi == QSGRendererInterface::OpenGL)
+    {
+        QSurfaceFormat format;
+        format.setRenderableType(QSurfaceFormat::OpenGL);
+        format.setProfile(QSurfaceFormat::CoreProfile);
+#if defined(Q_OS_MACOS)
+        format.setVersion(4, 1);
+#else
+        format.setVersion(4, 2);
+#endif
+        format.setDepthBufferSize(24);
+        format.setStencilBufferSize(8);
+        QSurfaceFormat::setDefaultFormat(format);
+    }
+
     QQuickWindow::setGraphicsApi(graphicsApi);
     QGuiApplication app(argc, argv);
     configureDebugFailureReporting();
+    LogCollector::instance().install();
+    if (graphicsApi == QSGRendererInterface::OpenGL)
+    {
+        QLoggingCategory::setFilterRules(QStringLiteral("rive.backend.gl.debug=true"));
+    }
     qml_register_types_RiveQtQuick();
     QQmlEngine engine;
     const QString appDir = QCoreApplication::applicationDirPath();
@@ -624,6 +993,15 @@ int main(int argc, char** argv)
         return 12;
     }
 
+    if (!renderAndValidate(engine,
+                           QStringLiteral("hello_world.riv"),
+                           QSize(240, 240),
+                           QColor(QStringLiteral("#101820")),
+                           "hello_world_render"))
+    {
+        return 14;
+    }
+
     if (!createAndValidate(
             engine,
             QString(R"(
@@ -636,6 +1014,34 @@ int main(int argc, char** argv)
             "hosted_image_file"))
     {
         return 15;
+    }
+
+    if (!renderAndValidate(engine,
+                           QStringLiteral("hosted_image_file.riv"),
+                           QSize(260, 260),
+                           QColor(QStringLiteral("#132033")),
+                           "hosted_image_render"))
+    {
+        return 16;
+    }
+
+    if (graphicsApi == QSGRendererInterface::OpenGL)
+    {
+        if (!renderBlendAndValidate(engine,
+                                    QSize(420, 420),
+                                    QColor(QStringLiteral("#12324a")),
+                                    "opengl_blend"))
+        {
+            return 17;
+        }
+
+        if (!renderAndValidateSharedContext(engine,
+                                            QSize(520, 280),
+                                            QColor(QStringLiteral("#16202a")),
+                                            "opengl_shared_context"))
+        {
+            return 18;
+        }
     }
 
     if (!interactAndValidateInputs(engine, "input_interactions"))

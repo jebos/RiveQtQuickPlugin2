@@ -20,7 +20,6 @@ unset(RIVE_SPIRV_OPT_EXECUTABLE CACHE)
 unset(RIVEQT_VULKAN_INCLUDE_DIR CACHE)
 unset(RIVEQT_VULKAN_LIBRARY CACHE)
 
-set(RIVEQT_ENABLE_OPENGL OFF)
 set(RIVEQT_ENABLE_D3D12 OFF)
 if(WIN32)
     set(RIVEQT_ENABLE_D3D12 ON)
@@ -115,6 +114,9 @@ endif()
 
 set(RIVE_SHADER_STAMP "${RIVE_GENERATED_SHADER_DIR}/stamp.txt")
 set(RIVE_SHADER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/cmake/generate_rive_shaders.py")
+file(GLOB_RECURSE RIVE_SHADER_SOURCE_DEPENDS CONFIGURE_DEPENDS
+    "${RIVE_CPP_DIR}/renderer/src/shaders/*"
+)
 set(RIVE_SHADER_EXTRA_ARGS)
 if(WIN32)
     list(APPEND RIVE_SHADER_EXTRA_ARGS --fxc=${RIVE_FXC_EXECUTABLE})
@@ -149,6 +151,7 @@ add_custom_command(
         ${RIVE_SHADER_EXTRA_ARGS}
     DEPENDS
         "${RIVE_SHADER_SCRIPT}"
+        ${RIVE_SHADER_SOURCE_DEPENDS}
         "${RIVE_CPP_DIR}/renderer/src/shaders/minify.py"
         "${RIVE_CPP_DIR}/renderer/src/shaders/spirv_binary_to_header.py"
     COMMENT "Generating vendored Rive renderer shader headers"
@@ -311,7 +314,10 @@ file(GLOB RIVE_GLAD_SOURCES CONFIGURE_DEPENDS
     "${RIVE_CPP_DIR}/renderer/glad/*.c"
 )
 
-list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/(webgpu|gl)/")
+list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/webgpu/")
+if(NOT RIVEQT_ENABLE_OPENGL)
+    list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/gl/")
+endif()
 if(NOT WIN32)
     list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/d3d/")
     list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/d3d11/")
@@ -371,6 +377,7 @@ target_compile_definitions(rive_official
         WITH_RIVE_SCRIPTING
         _RIVE_INTERNAL_
         YOGA_EXPORT=
+        $<$<BOOL:${RIVEQT_ENABLE_OPENGL}>:RIVE_DESKTOP_GL>
 )
 
 if(IOS)
@@ -391,7 +398,7 @@ endif()
 
 if(WIN32)
     target_compile_definitions(rive_official PUBLIC RIVE_WINDOWS _USE_MATH_DEFINES NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_link_libraries(rive_official PUBLIC d3d11 d3d12 dxgi dxguid d3dcompiler)
+    target_link_libraries(rive_official PUBLIC d3d11 d3d12 dxgi dxguid d3dcompiler opengl32)
 endif()
 
 if(RIVEQT_ENABLE_VULKAN)

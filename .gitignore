@@ -1,7 +1,24 @@
 build/
 build-*/
 .qtcreator/
-3rdparty/
+3rdparty/*
+!3rdparty/rive-cpp/
+3rdparty/rive-cpp/*
+!3rdparty/rive-cpp/renderer/
+3rdparty/rive-cpp/renderer/*
+!3rdparty/rive-cpp/renderer/glad/
+!3rdparty/rive-cpp/renderer/src/
+3rdparty/rive-cpp/renderer/glad/*
+!3rdparty/rive-cpp/renderer/glad/glad_custom.c
+3rdparty/rive-cpp/renderer/src/*
+!3rdparty/rive-cpp/renderer/src/gl/
+!3rdparty/rive-cpp/renderer/src/shaders/
+3rdparty/rive-cpp/renderer/src/gl/*
+!3rdparty/rive-cpp/renderer/src/gl/gl_state.cpp
+!3rdparty/rive-cpp/renderer/src/gl/render_context_gl_impl.cpp
+!3rdparty/rive-cpp/renderer/src/gl/render_target_gl.cpp
+3rdparty/rive-cpp/renderer/src/shaders/*
+!3rdparty/rive-cpp/renderer/src/shaders/glsl.glsl
 
 *.user
 *.suo

@@ -31,6 +31,12 @@ set(RIVEQT_IOS_DEVELOPMENT_TEAM
     ""
     CACHE STRING
     "Apple development team identifier used for iOS code signing. Leave empty to use Xcode automatic signing without an explicit team.")
+set(RIVEQT_ENABLE_OPENGL_DEFAULT OFF)
+if(NOT IOS)
+    set(RIVEQT_ENABLE_OPENGL_DEFAULT ON)
+endif()
+option(RIVEQT_ENABLE_OPENGL "Build desktop OpenGL backend support." ${RIVEQT_ENABLE_OPENGL_DEFAULT})
+
 set(RIVEQT_ENABLE_METAL_DEFAULT OFF)
 if(APPLE)
     set(RIVEQT_ENABLE_METAL_DEFAULT ON)

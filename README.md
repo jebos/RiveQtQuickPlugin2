@@ -30,12 +30,13 @@ RiveItem {
 
 - Direct3D 11 on Windows
 - Direct3D 12 when available in the bundled Rive runtime
+- OpenGL on Windows, Linux, and macOS through Qt Quick's graphics API switch
 - Vulkan when available in the bundled Rive runtime
 - Metal on macOS and iOS
 
 ### Not supported
 
-- OpenGL
+- Android / OpenGL ES
 - software rendering
 
 Right now the project is exercised most heavily on Windows and Apple platforms.
@@ -80,11 +81,20 @@ The top-level CMake project exposes a few useful switches:
 
 - `RIVEQT_BUILD_EXAMPLES=ON|OFF` builds the example applications
 - `RIVEQT_BUILD_TESTS=ON|OFF` builds the unit and QML tests
+- `RIVEQT_ENABLE_OPENGL=ON|OFF` enables the desktop OpenGL backend
 - `RIVEQT_ENABLE_METAL=ON|OFF` enables the Metal backend on Apple platforms
 - `RIVEQT_IOS_BUNDLE_ID_PREFIX=<prefix>` sets the generated iOS example app bundle identifiers
 - `RIVEQT_IOS_DEVELOPMENT_TEAM=<team-id>` sets an explicit Apple development team for iOS signing
 
+`RIVEQT_ENABLE_OPENGL` defaults to `ON` on desktop builds and `OFF` on iOS.
 `RIVEQT_ENABLE_METAL` defaults to `ON` on Apple platforms and `OFF` elsewhere.
+
+Backend selection stays in Qt. For example, request OpenGL before creating the
+first window:
+
+```cpp
+QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+```
 
 ## Build
 
@@ -109,7 +119,7 @@ cmake --build build --config Release --target \
 
 ### macOS
 
-Example Ninja build on macOS with Metal enabled:
+Example Ninja build on macOS:
 
 ```bash
 cmake -S . -B build-macos -G Ninja \
@@ -142,6 +152,12 @@ frameworks by mistake, reconfigure for `x86_64` simulator builds or use
 
 ```bash
 ctest --test-dir build --output-on-failure
+```
+
+The QML test runner also accepts an explicit backend override:
+
+```bash
+./tests-bin/riveqtquick_qml_tests --graphics-api opengl
 ```
 
 Multi-config generators such as Visual Studio can still use:

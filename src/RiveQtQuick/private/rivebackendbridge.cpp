@@ -2,6 +2,10 @@
 
 #include "rivelogging.h"
 
+#ifdef RIVEQT_ENABLE_OPENGL
+#include "riveglbridge.h"
+#endif
+
 #ifdef Q_OS_WIN
 #include "rived3d11bridge.h"
 #endif
@@ -22,6 +26,12 @@ std::unique_ptr<RiveBackendBridge> RiveBackendBridge::create(
   QSGRendererInterface::GraphicsApi api)
 {
   switch (api) {
+  case QSGRendererInterface::OpenGL:
+#ifdef RIVEQT_ENABLE_OPENGL
+    return createRiveGLBridge();
+#else
+    break;
+#endif
   case QSGRendererInterface::Direct3D11:
 #ifdef Q_OS_WIN
     return std::make_unique<RiveD3D11Bridge>();

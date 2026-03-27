@@ -20,6 +20,17 @@ set(RIVEQTQUICK_HEADERS
     private/riverenderstate.h
 )
 
+if(RIVEQT_ENABLE_OPENGL)
+    list(APPEND RIVEQTQUICK_SOURCES
+        private/qtglprocaddress.cpp
+        private/riveglbridge.cpp
+    )
+    list(APPEND RIVEQTQUICK_HEADERS
+        private/qtglprocaddress.h
+        private/riveglbridge.h
+    )
+endif()
+
 if(WIN32)
     list(APPEND RIVEQTQUICK_SOURCES
         private/rived3d11bridge.cpp
@@ -94,6 +105,7 @@ target_link_libraries(RiveQtQuick
 
 target_compile_definitions(RiveQtQuick
     PRIVATE
+        $<$<BOOL:${RIVEQT_ENABLE_OPENGL}>:RIVEQT_ENABLE_OPENGL>
         $<$<BOOL:${RIVEQT_ENABLE_D3D12}>:RIVEQT_ENABLE_D3D12>
         $<$<BOOL:${RIVEQT_ENABLE_VULKAN}>:RIVEQT_ENABLE_VULKAN>
 )
