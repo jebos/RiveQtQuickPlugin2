@@ -92,6 +92,7 @@ jobs:
           ctest --test-dir build-ci -C Debug --output-on-failure --timeout 180 -R '^riveqtquick_qml_tests$'
 
       - name: Test qml opengl
+        if: ${{ always() }}
         shell: powershell
         run: |
           ctest --test-dir build-ci -C Debug --output-on-failure --timeout 180 -R '^riveqtquick_qml_tests_opengl$'
