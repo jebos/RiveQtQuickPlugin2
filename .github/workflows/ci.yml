@@ -81,10 +81,20 @@ jobs:
         run: |
           cmake --build build-ci --config Debug --target riveqtquick_marketplace_demo riveqtquick_qml_tests riveqtquick_unit_tests
 
-      - name: Test
+      - name: Test unit
         shell: powershell
         run: |
-          ctest --test-dir build-ci -C Debug --output-on-failure --timeout 180
+          ctest --test-dir build-ci -C Debug --output-on-failure --timeout 180 -R '^riveqtquick_unit_tests$'
+
+      - name: Test qml d3d11
+        shell: powershell
+        run: |
+          ctest --test-dir build-ci -C Debug --output-on-failure --timeout 180 -R '^riveqtquick_qml_tests$'
+
+      - name: Test qml opengl
+        shell: powershell
+        run: |
+          ctest --test-dir build-ci -C Debug --output-on-failure --timeout 180 -R '^riveqtquick_qml_tests_opengl$'
 
   linux-build-and-test:
     runs-on: ubuntu-24.04

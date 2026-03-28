@@ -58,6 +58,7 @@ foreach(riveqt_backend IN LISTS RIVEQT_QML_TEST_APIS)
     endif()
 
     if(WIN32)
+        set(riveqt_deploy_dir "${CMAKE_CURRENT_BINARY_DIR}/deployed-${riveqt_backend}")
         add_test(
             NAME ${riveqt_test_name}
             COMMAND ${CMAKE_COMMAND}
@@ -65,8 +66,8 @@ foreach(riveqt_backend IN LISTS RIVEQT_QML_TEST_APIS)
                 -DDEPLOY_MODE=$<IF:$<CONFIG:Debug>,--debug,--release>
                 -DEXECUTABLE=$<TARGET_FILE:riveqtquick_qml_tests>
                 -DEXECUTABLE_DIR=$<TARGET_FILE_DIR:riveqtquick_qml_tests>
-                -DRUN_DEPLOY_DIR=${CMAKE_CURRENT_BINARY_DIR}/deployed
-                -DWORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/deployed
+                -DRUN_DEPLOY_DIR=${riveqt_deploy_dir}
+                -DWORKING_DIRECTORY=${riveqt_deploy_dir}
                 -DQMLDIR=${CMAKE_CURRENT_SOURCE_DIR}
                 -DLOCAL_QML_MODULE_NAME=RiveQtQuick
                 -DLOCAL_QML_MODULE_DIR=${CMAKE_BINARY_DIR}/src/RiveQtQuick
