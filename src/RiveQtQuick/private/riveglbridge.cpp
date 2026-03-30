@@ -5,6 +5,8 @@
 #include <mutex>
 #include <unordered_map>
 
+#include <QOpenGLContext>
+#include <QSurfaceFormat>
 #include <QtQuick/QQuickWindow>
 #include <rhi/qrhi.h>
 #include <rhi/qrhi_platform.h>
@@ -33,6 +35,35 @@ GLADapiproc loadGladSymbol(const char* name)
 {
   return reinterpret_cast<GLADapiproc>(
     resolveQtOpenGLProcAddress(g_gladLoaderContext, name));
+}
+
+bool isDesktopOpenGL42OrNewer(void* contextHandle)
+{
+  auto* glContext = static_cast<QOpenGLContext*>(contextHandle);
+  if (!glContext) {
+    qCWarning(lcRiveGL)
+      << "Qt did not expose a QOpenGLContext for the scenegraph.";
+    return false;
+  }
+
+  const QSurfaceFormat format = glContext->format();
+  if (glContext->isOpenGLES()) {
+    qCWarning(lcRiveGL).nospace()
+      << "Desktop OpenGL backend requires a desktop OpenGL 4.2+ core context, "
+      << "but Qt created OpenGL ES "
+      << format.majorVersion() << '.' << format.minorVersion() << '.';
+    return false;
+  }
+
+  if (format.majorVersion() < 4
+    || (format.majorVersion() == 4 && format.minorVersion() < 2)) {
+    qCWarning(lcRiveGL).nospace()
+      << "Desktop OpenGL backend requires OpenGL 4.2+, but Qt created "
+      << format.majorVersion() << '.' << format.minorVersion() << '.';
+    return false;
+  }
+
+  return true;
 }
 } // namespace
 
@@ -83,6 +114,11 @@ bool RiveGLBridge::syncPresentation(QQuickWindow* window,
 QRhiTexture* RiveGLBridge::outputTexture() const
 {
   return m_outputTexture;
+}
+
+bool RiveGLBridge::requiresExternalCommands() const
+{
+  return true;
 }
 
 bool RiveGLBridge::prepareFrame(QQuickWindow* window,
@@ -227,6 +263,10 @@ bool RiveGLBridge::ensureContext(QQuickWindow* window)
   }
   if (!rawContext || !loaderContext) {
     qCDebug(lcRiveGL) << "Qt did not expose an OpenGL context for the scenegraph.";
+    return false;
+  }
+
+  if (!isDesktopOpenGL42OrNewer(loaderContext)) {
     return false;
   }
 

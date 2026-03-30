@@ -6,7 +6,6 @@
 #include <unordered_set>
 
 #include <QMatrix4x4>
-#include <QtCore/qscopeguard.h>
 #include <QtMath>
 #include <QtQuick/QQuickWindow>
 #include <QtQuick/QSGRenderNode>
@@ -478,16 +477,6 @@ void RiveRenderNode::render(const QSGRenderNode::RenderState*)
       Qt::QueuedConnection);
     return;
   }
-
-  const bool usesExternalCommands = m_bridge->api() == QSGRendererInterface::OpenGL;
-  if (usesExternalCommands) {
-    m_item->window()->beginExternalCommands();
-  }
-  auto endExternalCommands = qScopeGuard([this, usesExternalCommands]() {
-    if (usesExternalCommands && m_item && m_item->window()) {
-      m_item->window()->endExternalCommands();
-    }
-  });
 
   if (!m_bridge->prepareFrame(m_item->window(), cb) || !ensureDocument()) {
     qCDebug(lcRiveRenderNode) << "Failed to prepare the Rive frame.";

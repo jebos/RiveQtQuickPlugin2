@@ -17,6 +17,7 @@ class RiveGLBridge : public RiveBackendBridge {
   bool syncPresentation(QQuickWindow* window,
     const QSize& pixelSize) override;
   QRhiTexture* outputTexture() const override;
+  bool requiresExternalCommands() const override;
   bool prepareFrame(QQuickWindow* window,
     QRhiCommandBuffer* commandBuffer) override;
   rive::Factory* factory() const override;

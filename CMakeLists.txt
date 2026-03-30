@@ -32,10 +32,14 @@ set(RIVEQT_IOS_DEVELOPMENT_TEAM
     CACHE STRING
     "Apple development team identifier used for iOS code signing. Leave empty to use Xcode automatic signing without an explicit team.")
 set(RIVEQT_ENABLE_OPENGL_DEFAULT OFF)
-if(NOT IOS)
+if(WIN32 OR (UNIX AND NOT APPLE AND NOT ANDROID))
     set(RIVEQT_ENABLE_OPENGL_DEFAULT ON)
 endif()
 option(RIVEQT_ENABLE_OPENGL "Build desktop OpenGL backend support." ${RIVEQT_ENABLE_OPENGL_DEFAULT})
+if(APPLE AND RIVEQT_ENABLE_OPENGL)
+    message(FATAL_ERROR
+        "Desktop OpenGL backend support requires OpenGL 4.2+ and is unsupported on Apple platforms. Use Metal instead.")
+endif()
 
 set(RIVEQT_ENABLE_METAL_DEFAULT OFF)
 if(APPLE)

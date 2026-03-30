@@ -32,6 +32,7 @@ class RiveBackendBridge {
     const QSize& pixelSize)
     = 0;
   virtual QRhiTexture* outputTexture() const = 0;
+  virtual bool requiresExternalCommands() const { return false; }
   virtual bool prepareFrame(QQuickWindow* window,
     QRhiCommandBuffer* commandBuffer)
     = 0;

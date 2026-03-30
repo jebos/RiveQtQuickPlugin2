@@ -27,24 +27,13 @@ void configureGraphicsApi()
 {
 #if defined(Q_OS_IOS)
     QQuickWindow::setGraphicsApi(QSGRendererInterface::Metal);
-#elif defined(Q_OS_MACOS)
+#elif defined(Q_OS_WIN) || defined(Q_OS_LINUX)
     if (QQuickWindow::graphicsApi() == QSGRendererInterface::OpenGL)
     {
         QSurfaceFormat format;
         format.setRenderableType(QSurfaceFormat::OpenGL);
         format.setProfile(QSurfaceFormat::CoreProfile);
-        format.setVersion(4, 1);
-        format.setDepthBufferSize(24);
-        format.setStencilBufferSize(8);
-        QSurfaceFormat::setDefaultFormat(format);
-    }
-#else
-    if (QQuickWindow::graphicsApi() == QSGRendererInterface::OpenGL)
-    {
-        QSurfaceFormat format;
-        format.setRenderableType(QSurfaceFormat::OpenGL);
-        format.setProfile(QSurfaceFormat::CoreProfile);
-        format.setVersion(4, 1);
+        format.setVersion(4, 2);
         format.setDepthBufferSize(24);
         format.setStencilBufferSize(8);
         QSurfaceFormat::setDefaultFormat(format);
