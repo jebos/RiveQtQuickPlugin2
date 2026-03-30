@@ -5,8 +5,6 @@
 #include <mutex>
 #include <unordered_map>
 
-#include <QOpenGLContext>
-#include <QSurfaceFormat>
 #include <QtQuick/QQuickWindow>
 #include <rhi/qrhi.h>
 #include <rhi/qrhi_platform.h>
@@ -39,27 +37,26 @@ GLADapiproc loadGladSymbol(const char* name)
 
 bool isDesktopOpenGL42OrNewer(void* contextHandle)
 {
-  auto* glContext = static_cast<QOpenGLContext*>(contextHandle);
-  if (!glContext) {
+  const QtOpenGLContextInfo contextInfo = queryQtOpenGLContextInfo(contextHandle);
+  if (!contextInfo.valid) {
     qCWarning(lcRiveGL)
       << "Qt did not expose a QOpenGLContext for the scenegraph.";
     return false;
   }
 
-  const QSurfaceFormat format = glContext->format();
-  if (glContext->isOpenGLES()) {
+  if (contextInfo.isOpenGLES) {
     qCWarning(lcRiveGL).nospace()
       << "Desktop OpenGL backend requires a desktop OpenGL 4.2+ core context, "
       << "but Qt created OpenGL ES "
-      << format.majorVersion() << '.' << format.minorVersion() << '.';
+      << contextInfo.majorVersion << '.' << contextInfo.minorVersion << '.';
     return false;
   }
 
-  if (format.majorVersion() < 4
-    || (format.majorVersion() == 4 && format.minorVersion() < 2)) {
+  if (contextInfo.majorVersion < 4
+    || (contextInfo.majorVersion == 4 && contextInfo.minorVersion < 2)) {
     qCWarning(lcRiveGL).nospace()
       << "Desktop OpenGL backend requires OpenGL 4.2+, but Qt created "
-      << format.majorVersion() << '.' << format.minorVersion() << '.';
+      << contextInfo.majorVersion << '.' << contextInfo.minorVersion << '.';
     return false;
   }
 

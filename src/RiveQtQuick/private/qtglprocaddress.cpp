@@ -57,6 +57,22 @@ void* resolveQtOpenGLProcAddress(void* context, const char* name)
   return procAddress ? procAddress : fallbackDesktopGLProcAddress(name);
 }
 
+QtOpenGLContextInfo queryQtOpenGLContextInfo(void* context)
+{
+  auto* glContext = static_cast<QOpenGLContext*>(context);
+  if (!glContext) {
+    return {};
+  }
+
+  const QSurfaceFormat format = glContext->format();
+  return {
+    .valid = true,
+    .isOpenGLES = glContext->isOpenGLES(),
+    .majorVersion = format.majorVersion(),
+    .minorVersion = format.minorVersion(),
+  };
+}
+
 #else
 
 void* currentQtOpenGLContext()
@@ -72,6 +88,11 @@ bool isQtOpenGLContextCurrent(void*)
 void* resolveQtOpenGLProcAddress(void*, const char*)
 {
   return nullptr;
+}
+
+QtOpenGLContextInfo queryQtOpenGLContextInfo(void*)
+{
+  return {};
 }
 
 #endif
