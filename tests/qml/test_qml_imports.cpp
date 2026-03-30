@@ -326,13 +326,28 @@ bool waitForRiveViewsReady(QQuickWindow* window,
                            const QList<QObject*>& riveViews,
                            const char* label)
 {
-    waitFor([window]() { return window && window->isExposed(); }, 5000);
+    if (window)
+    {
+        window->requestUpdate();
+    }
+    waitFor(
+        [window]() {
+            if (!window)
+            {
+                return false;
+            }
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            window->requestUpdate();
+            return window->isExposed();
+        },
+        5000);
     const bool ready = waitFor(
         [window, riveViews]() {
             if (!window)
             {
                 return false;
             }
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
             window->requestUpdate();
             for (QObject* riveView : riveViews)
             {
