@@ -10,6 +10,9 @@
 #include <rhi/qrhi_platform.h>
 
 #include "qtglprocaddress.h"
+#ifdef GLAPI
+#undef GLAPI
+#endif
 #include "rive/artboard.hpp"
 #include "rive/renderer/gl/gles3.hpp"
 #include "rive/renderer/gl/render_context_gl_impl.hpp"

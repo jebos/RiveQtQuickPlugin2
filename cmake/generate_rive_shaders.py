@@ -1,4 +1,5 @@
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -101,6 +102,22 @@ def write_stamp(path: Path) -> None:
     path.write_text("generated\n", encoding="utf-8")
 
 
+def repair_glsl_token_boundaries(out_dir: Path) -> None:
+    # The upstream minifier can collapse `)` directly into the next identifier
+    # (for example `w1(c) v` -> `w1(c)v`), which Mesa rejects when compiling the
+    # generated OpenGL shaders. Insert the separator back into the generated
+    # artifacts we consume locally without patching the vendored runtime tree.
+    generated_patterns = ("*.hpp", "*.minified.glsl", "*.minified.vert", "*.minified.frag")
+    token_boundary_pattern = re.compile(r"\)(?=[A-Za-z_])")
+
+    for pattern in generated_patterns:
+        for path in out_dir.glob(pattern):
+            text = path.read_text(encoding="utf-8")
+            repaired = token_boundary_pattern.sub(") ", text)
+            if repaired != text:
+                path.write_text(repaired, encoding="utf-8")
+
+
 def minify(source_dir: Path, out_dir: Path, ply_path: Path) -> None:
     inputs = []
     for pattern in ("*.glsl", "*.vert", "*.frag"):
@@ -116,6 +133,7 @@ def minify(source_dir: Path, out_dir: Path, ply_path: Path) -> None:
     ]
     command.extend(str(path) for path in inputs)
     run(command, cwd=source_dir)
+    repair_glsl_token_boundaries(out_dir)
 
 
 def compile_d3d(source_dir: Path, out_dir: Path, fxc: Path) -> None:
