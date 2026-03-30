@@ -2873,6 +2873,23 @@ std::unique_ptr<RenderContext> RenderContextGLImpl::MakeContext(
     }
 #endif
 
+    if (!capabilities.isGLES)
+    {
+        // The desktop fallback path intentionally supports 4.1 contexts.
+        // Keep the optional image load/store and SSBO paths disabled until the
+        // corresponding core language version is guaranteed, otherwise the GL
+        // shaders may emit layout(binding=...) declarations that a 4.1 context
+        // cannot compile.
+        if (!capabilities.isContextVersionAtLeast(4, 2))
+        {
+            capabilities.ARB_shader_image_load_store = false;
+        }
+        if (!capabilities.isContextVersionAtLeast(4, 3))
+        {
+            capabilities.ARB_shader_storage_buffer_object = false;
+        }
+    }
+
     if (capabilities.ARB_shader_storage_buffer_object)
     {
         // We need four storage buffers in the vertex shader. Disable the

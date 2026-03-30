@@ -98,22 +98,85 @@ if(DEFINED EXECUTABLE_ARGS AND NOT EXECUTABLE_ARGS STREQUAL "")
     list(APPEND run_command ${parsed_args})
 endif()
 
-set(run_process_args
-    COMMAND ${run_command}
-    WORKING_DIRECTORY "${WORKING_DIRECTORY}"
-    RESULT_VARIABLE run_result
-    OUTPUT_VARIABLE run_output
-    ERROR_VARIABLE run_error
-)
-if(DEFINED RUN_TIMEOUT_SECONDS AND NOT RUN_TIMEOUT_SECONDS STREQUAL "")
-    list(APPEND run_process_args TIMEOUT "${RUN_TIMEOUT_SECONDS}")
-endif()
+if(WIN32)
+    set(run_stdout_file "${executable_dir}/run-stdout.txt")
+    set(run_stderr_file "${executable_dir}/run-stderr.txt")
+    file(REMOVE "${run_stdout_file}" "${run_stderr_file}")
 
-execute_process(${run_process_args})
+    set(ps_argument_list)
+    foreach(run_arg IN LISTS parsed_args)
+        string(REPLACE "'" "''" escaped_run_arg "${run_arg}")
+        string(APPEND ps_argument_list "    '${escaped_run_arg}'\n")
+    endforeach()
+    set(launcher_argument_clause)
+    if(NOT "${ps_argument_list}" STREQUAL "")
+        set(launcher_argument_clause "-ArgumentList @(\n${ps_argument_list}) ")
+    endif()
+
+    string(REPLACE "'" "''" escaped_executable_to_run "${executable_to_run}")
+    string(REPLACE "'" "''" escaped_working_directory "${WORKING_DIRECTORY}")
+    string(REPLACE "'" "''" escaped_run_stdout_file "${run_stdout_file}")
+    string(REPLACE "'" "''" escaped_run_stderr_file "${run_stderr_file}")
+    set(launcher_timeout_ms -1)
+    if(DEFINED RUN_TIMEOUT_SECONDS AND NOT RUN_TIMEOUT_SECONDS STREQUAL "")
+        math(EXPR launcher_timeout_ms "${RUN_TIMEOUT_SECONDS} * 1000")
+    endif()
+
+    set(win_launcher_script "${executable_dir}/run-with-windeployqt.ps1")
+    set(launcher_script_content "$ErrorActionPreference = 'Stop'\n")
+    string(APPEND launcher_script_content
+        "$process = Start-Process -FilePath '${escaped_executable_to_run}' "
+        "${launcher_argument_clause}"
+        "-WorkingDirectory '${escaped_working_directory}' "
+        "-PassThru "
+        "-RedirectStandardOutput '${escaped_run_stdout_file}' "
+        "-RedirectStandardError '${escaped_run_stderr_file}'\n"
+    )
+    string(APPEND launcher_script_content
+        "if (${launcher_timeout_ms} -ge 0) {\n"
+        "    if (-not \$process.WaitForExit(${launcher_timeout_ms})) {\n"
+        "        try {\n"
+        "            \$process.Kill(\$true)\n"
+        "        } catch {\n"
+        "        }\n"
+        "        exit 124\n"
+        "    }\n"
+        "} else {\n"
+        "    \$process.WaitForExit()\n"
+        "}\n"
+        "exit \$process.ExitCode\n"
+    )
+    file(WRITE "${win_launcher_script}" "${launcher_script_content}")
+
+    execute_process(
+        COMMAND powershell -NoLogo -NonInteractive -ExecutionPolicy Bypass -File "${win_launcher_script}"
+        RESULT_VARIABLE run_result
+    )
+
+    if(EXISTS "${run_stdout_file}")
+        file(READ "${run_stdout_file}" run_output)
+    endif()
+    if(EXISTS "${run_stderr_file}")
+        file(READ "${run_stderr_file}" run_error)
+    endif()
+else()
+    set(run_process_args
+        COMMAND ${run_command}
+        WORKING_DIRECTORY "${WORKING_DIRECTORY}"
+        RESULT_VARIABLE run_result
+        OUTPUT_VARIABLE run_output
+        ERROR_VARIABLE run_error
+    )
+    if(DEFINED RUN_TIMEOUT_SECONDS AND NOT RUN_TIMEOUT_SECONDS STREQUAL "")
+        list(APPEND run_process_args TIMEOUT "${RUN_TIMEOUT_SECONDS}")
+    endif()
+
+    execute_process(${run_process_args})
+endif()
 
 if(DEFINED ALLOW_TIMEOUT_SUCCESS AND ALLOW_TIMEOUT_SUCCESS)
     string(TOLOWER "${run_result}" run_result_lower)
-    if(run_result_lower MATCHES "timeout")
+    if(run_result_lower MATCHES "timeout" OR "${run_result}" STREQUAL "124")
         set(run_result 0)
     endif()
 endif()
