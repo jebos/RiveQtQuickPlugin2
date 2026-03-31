@@ -17,7 +17,7 @@ set(RIVEQTQUICK_HEADERS
     private/rivefileassetloader.h
     private/riveinspector.h
     private/riverendernode.h
-    private/riverenderstate.h
+        private/riverenderstate.h
 )
 
 if(RIVEQT_ENABLE_OPENGL)
@@ -28,6 +28,27 @@ if(RIVEQT_ENABLE_OPENGL)
     list(APPEND RIVEQTQUICK_HEADERS
         private/qtglprocaddress.h
         private/riveglbridge.h
+    )
+endif()
+
+if(RIVEQT_ENABLE_SOFTWARE)
+    list(APPEND RIVEQTQUICK_SOURCES
+        private/rivesoftwarebridge.cpp
+        private/qpainter/qpainterrivefactory.cpp
+        private/qpainter/qpainterriveimage.cpp
+        private/qpainter/qpainterrivepaint.cpp
+        private/qpainter/qpainterrivepath.cpp
+        private/qpainter/qpainterriverenderer.cpp
+        private/qpainter/qpainterriveshader.cpp
+    )
+    list(APPEND RIVEQTQUICK_HEADERS
+        private/rivesoftwarebridge.h
+        private/qpainter/qpainterrivefactory.h
+        private/qpainter/qpainterriveimage.h
+        private/qpainter/qpainterrivepaint.h
+        private/qpainter/qpainterrivepath.h
+        private/qpainter/qpainterriverenderer.h
+        private/qpainter/qpainterriveshader.h
     )
 endif()
 
@@ -106,6 +127,7 @@ target_link_libraries(RiveQtQuick
 target_compile_definitions(RiveQtQuick
     PRIVATE
         $<$<BOOL:${RIVEQT_ENABLE_OPENGL}>:RIVEQT_ENABLE_OPENGL>
+        $<$<BOOL:${RIVEQT_ENABLE_SOFTWARE}>:RIVEQT_ENABLE_SOFTWARE>
         $<$<BOOL:${RIVEQT_ENABLE_D3D12}>:RIVEQT_ENABLE_D3D12>
         $<$<BOOL:${RIVEQT_ENABLE_VULKAN}>:RIVEQT_ENABLE_VULKAN>
 )

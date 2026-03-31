@@ -6,6 +6,10 @@
 #include "riveglbridge.h"
 #endif
 
+#ifdef RIVEQT_ENABLE_SOFTWARE
+std::unique_ptr<RiveBackendBridge> createRiveSoftwareBridge();
+#endif
+
 #ifdef Q_OS_WIN
 #include "rived3d11bridge.h"
 #endif
@@ -29,6 +33,12 @@ std::unique_ptr<RiveBackendBridge> RiveBackendBridge::create(
   case QSGRendererInterface::OpenGL:
 #ifdef RIVEQT_ENABLE_OPENGL
     return createRiveGLBridge();
+#else
+    break;
+#endif
+  case QSGRendererInterface::Software:
+#ifdef RIVEQT_ENABLE_SOFTWARE
+    return createRiveSoftwareBridge();
 #else
     break;
 #endif

@@ -6,7 +6,8 @@ the official Rive runtime and renderer. The repository name is
 
 The goal is to keep rendering fast by integrating directly with Qt Quick's RHI
 backends and sharing rendering resources across all `RiveItem` instances in the
-scene.
+scene. Desktop builds also include a best-effort QPainter software backend for
+Qt Quick's `Software` graphics API.
 
 ```qml
 import RiveQtQuick
@@ -33,12 +34,23 @@ RiveItem {
 - OpenGL 4.2+ on Windows and Linux through Qt Quick's graphics API switch
 - Vulkan when available in the bundled Rive runtime
 - Metal on macOS and iOS
+- QPainter software rendering on desktop platforms through Qt Quick's
+  `QSGRendererInterface::Software` backend
 
 ### Not supported
 
 - Android / OpenGL ES
 - desktop OpenGL on Apple platforms
-- software rendering
+
+### Known software limitations
+
+- software rendering is desktop-only in v1
+- advanced blend parity can differ from GPU backends, especially for
+  `hue`, `saturation`, `color`, and `luminosity`
+- feather softness is approximated and may render without the full soft-edge
+  effect
+- textured image meshes use a triangle fallback and can show seam or sampling
+  differences compared with GPU backends
 
 Right now the project is exercised most heavily on Windows and Apple platforms.
 Release builds are the ones that matter for performance. Debug builds are fine
@@ -84,11 +96,14 @@ The top-level CMake project exposes a few useful switches:
 - `RIVEQT_BUILD_TESTS=ON|OFF` builds the unit and QML tests
 - `RIVEQT_ENABLE_OPENGL=ON|OFF` enables the desktop OpenGL backend on Windows/Linux
 - `RIVEQT_ENABLE_METAL=ON|OFF` enables the Metal backend on Apple platforms
+- `RIVEQT_ENABLE_SOFTWARE=ON|OFF` enables the desktop QPainter software backend
 - `RIVEQT_IOS_BUNDLE_ID_PREFIX=<prefix>` sets the generated iOS example app bundle identifiers
 - `RIVEQT_IOS_DEVELOPMENT_TEAM=<team-id>` sets an explicit Apple development team for iOS signing
 
 `RIVEQT_ENABLE_OPENGL` defaults to `ON` on Windows/Linux and `OFF` on Apple platforms.
 `RIVEQT_ENABLE_METAL` defaults to `ON` on Apple platforms and `OFF` elsewhere.
+`RIVEQT_ENABLE_SOFTWARE` defaults to `ON` on desktop builds and `OFF` on mobile
+platforms.
 
 Backend selection stays in Qt. For example, request OpenGL before creating the
 first window:
@@ -98,6 +113,12 @@ QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 ```
 
 The desktop OpenGL backend requires an actual OpenGL `4.2+` core context.
+
+Backend selection stays in Qt. For the software backend:
+
+```cpp
+QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+```
 
 ## Build
 
@@ -164,6 +185,10 @@ The QML test runner also accepts an explicit backend override:
 ```
 
 `opengl` is supported on Windows/Linux only and requires a desktop OpenGL `4.2+` context.
+
+```bash
+./tests-bin/riveqtquick_qml_tests --graphics-api software
+```
 
 Multi-config generators such as Visual Studio can still use:
 

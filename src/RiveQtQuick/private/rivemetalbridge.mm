@@ -52,6 +52,11 @@ QSGRendererInterface::GraphicsApi RiveMetalBridge::api() const
   return QSGRendererInterface::Metal;
 }
 
+RiveBackendBridge::TargetKind RiveMetalBridge::targetKind() const
+{
+  return TargetKind::Texture;
+}
+
 bool RiveMetalBridge::syncPresentation(QQuickWindow* window,
   const QSize& pixelSize)
 {
@@ -91,9 +96,15 @@ QRhiTexture* RiveMetalBridge::outputTexture() const
   return m_outputTexture;
 }
 
-bool RiveMetalBridge::prepareFrame(QQuickWindow* window,
-  QRhiCommandBuffer* commandBuffer)
+bool RiveMetalBridge::beginFrame(QQuickWindow* window,
+  QRhiCommandBuffer* commandBuffer,
+  QPainter* painter,
+  const QSize& pixelSize,
+  bool targetYUp)
 {
+  Q_UNUSED(painter);
+  Q_UNUSED(pixelSize);
+  Q_UNUSED(targetYUp);
   m_window = window;
   if (!m_outputTexture) {
     qCDebug(lcRiveMetal) << "output texture is not initialized.";

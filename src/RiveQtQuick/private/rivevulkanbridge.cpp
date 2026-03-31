@@ -56,6 +56,11 @@ QSGRendererInterface::GraphicsApi RiveVulkanBridge::api() const
     return QSGRendererInterface::Vulkan;
 }
 
+RiveBackendBridge::TargetKind RiveVulkanBridge::targetKind() const
+{
+    return TargetKind::Texture;
+}
+
 bool RiveVulkanBridge::syncPresentation(QQuickWindow* window,
                                         const QSize& pixelSize)
 {
@@ -103,10 +108,16 @@ QRhiTexture* RiveVulkanBridge::outputTexture() const
     return m_outputTexture;
 }
 
-bool RiveVulkanBridge::prepareFrame(QQuickWindow* window,
-                                    QRhiCommandBuffer* commandBuffer)
+bool RiveVulkanBridge::beginFrame(QQuickWindow* window,
+                                  QRhiCommandBuffer* commandBuffer,
+                                  QPainter* painter,
+                                  const QSize& pixelSize,
+                                  bool targetYUp)
 {
     m_window = window;
+    Q_UNUSED(painter);
+    Q_UNUSED(pixelSize);
+    Q_UNUSED(targetYUp);
     Q_UNUSED(commandBuffer);
     if (!m_outputTexture)
     {

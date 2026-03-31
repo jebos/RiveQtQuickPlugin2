@@ -9,6 +9,7 @@
 #include "rive/refcnt.hpp"
 
 class QQuickWindow;
+class QPainter;
 class QRhiCommandBuffer;
 class QRhiTexture;
 
@@ -21,6 +22,11 @@ class Scene;
 
 class RiveBackendBridge {
   public:
+  enum class TargetKind {
+    Texture,
+    Painter,
+  };
+
   virtual ~RiveBackendBridge() = default;
 
   static std::unique_ptr<RiveBackendBridge> create(
@@ -28,13 +34,16 @@ class RiveBackendBridge {
   static QString graphicsApiName(QSGRendererInterface::GraphicsApi api);
 
   virtual QSGRendererInterface::GraphicsApi api() const = 0;
+  virtual TargetKind targetKind() const = 0;
   virtual bool syncPresentation(QQuickWindow* window,
     const QSize& pixelSize)
     = 0;
   virtual QRhiTexture* outputTexture() const = 0;
-  virtual bool requiresExternalCommands() const { return false; }
-  virtual bool prepareFrame(QQuickWindow* window,
-    QRhiCommandBuffer* commandBuffer)
+  virtual bool beginFrame(QQuickWindow* window,
+    QRhiCommandBuffer* commandBuffer,
+    QPainter* painter,
+    const QSize& pixelSize,
+    bool targetYUp)
     = 0;
   virtual rive::Factory* factory() const = 0;
   virtual rive::rcp<rive::RenderImage> createRenderImage(

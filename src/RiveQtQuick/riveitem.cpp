@@ -7,6 +7,7 @@
 #include <QMouseEvent>
 #include <QTouchEvent>
 #include <QtConcurrent/QtConcurrentRun>
+#include <QtQuick/QQuickWindow>
 
 #include "private/rivelogging.h"
 #include "private/riverendernode.h"
@@ -54,6 +55,9 @@ RiveItem::RiveItem(QQuickItem* parent)
     m_sourceBytes = bytes;
     ++m_sourceRevision;
     update();
+    if (window()) {
+      window()->update();
+    }
   });
 }
 
@@ -129,12 +133,22 @@ QString RiveItem::stateMachine() const
 
 void RiveItem::setStateMachine(const QString& stateMachine)
 {
-  if (m_stateMachine == stateMachine) {
+  const bool clearAnimation = !stateMachine.isEmpty() && !m_animation.isEmpty();
+  if (m_stateMachine == stateMachine && !clearAnimation) {
     return;
   }
+
+  if (clearAnimation) {
+    m_animation.clear();
+    emit animationChanged();
+  }
+
   m_stateMachine = stateMachine;
   emit stateMachineChanged();
   update();
+  if (window()) {
+    window()->update();
+  }
 }
 
 QString RiveItem::animation() const
@@ -144,12 +158,22 @@ QString RiveItem::animation() const
 
 void RiveItem::setAnimation(const QString& animation)
 {
-  if (m_animation == animation) {
+  const bool clearStateMachine = !animation.isEmpty() && !m_stateMachine.isEmpty();
+  if (m_animation == animation && !clearStateMachine) {
     return;
   }
+
+  if (clearStateMachine) {
+    m_stateMachine.clear();
+    emit stateMachineChanged();
+  }
+
   m_animation = animation;
   emit animationChanged();
   update();
+  if (window()) {
+    window()->update();
+  }
 }
 
 QString RiveItem::viewModel() const
@@ -354,10 +378,6 @@ void RiveItem::selectArtboard(const QString& name)
 
 void RiveItem::selectStateMachine(const QString& name)
 {
-  if (!name.isEmpty() && !m_animation.isEmpty()) {
-    m_animation.clear();
-    emit animationChanged();
-  }
   setStateMachine(name);
 }
 
@@ -399,6 +419,10 @@ void RiveItem::clearEventLog()
 QSGNode* RiveItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*)
 {
   auto* node = static_cast<RiveRenderNode*>(oldNode);
+  if (!node && m_sourceBytes.isEmpty()) {
+    return nullptr;
+  }
+
   if (!node) {
     node = new RiveRenderNode(this);
   }
@@ -544,6 +568,9 @@ void RiveItem::loadSource()
     clearRuntimeState();
     setStatusInternal(Status::Null);
     update();
+    if (window()) {
+      window()->update();
+    }
     return;
   }
 
@@ -552,6 +579,9 @@ void RiveItem::loadSource()
   m_sourceBytes.clear();
   ++m_sourceRevision;
   update();
+  if (window()) {
+    window()->update();
+  }
 
   if (m_source.isLocalFile() || m_source.scheme().isEmpty() || m_source.scheme() == "qrc") {
     QUrl requestedSource = m_source;

@@ -40,6 +40,11 @@ QSGRendererInterface::GraphicsApi RiveD3D12Bridge::api() const
     return QSGRendererInterface::Direct3D12;
 }
 
+RiveBackendBridge::TargetKind RiveD3D12Bridge::targetKind() const
+{
+    return TargetKind::Texture;
+}
+
 bool RiveD3D12Bridge::syncPresentation(QQuickWindow* window,
                                        const QSize& pixelSize)
 {
@@ -87,9 +92,15 @@ QRhiTexture* RiveD3D12Bridge::outputTexture() const
     return m_outputTexture;
 }
 
-bool RiveD3D12Bridge::prepareFrame(QQuickWindow* window,
-                                   QRhiCommandBuffer* commandBuffer)
+bool RiveD3D12Bridge::beginFrame(QQuickWindow* window,
+                                 QRhiCommandBuffer* commandBuffer,
+                                 QPainter* painter,
+                                 const QSize& pixelSize,
+                                 bool targetYUp)
 {
+    Q_UNUSED(painter);
+    Q_UNUSED(pixelSize);
+    Q_UNUSED(targetYUp);
     m_window = window;
     if (!m_outputTexture)
     {

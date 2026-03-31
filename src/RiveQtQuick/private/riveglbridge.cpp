@@ -77,6 +77,11 @@ QSGRendererInterface::GraphicsApi RiveGLBridge::api() const
   return QSGRendererInterface::OpenGL;
 }
 
+RiveBackendBridge::TargetKind RiveGLBridge::targetKind() const
+{
+  return TargetKind::Texture;
+}
+
 bool RiveGLBridge::syncPresentation(QQuickWindow* window,
   const QSize& pixelSize)
 {
@@ -116,14 +121,15 @@ QRhiTexture* RiveGLBridge::outputTexture() const
   return m_outputTexture;
 }
 
-bool RiveGLBridge::requiresExternalCommands() const
+bool RiveGLBridge::beginFrame(QQuickWindow* window,
+  QRhiCommandBuffer* commandBuffer,
+  QPainter* painter,
+  const QSize& pixelSize,
+  bool targetYUp)
 {
-  return true;
-}
-
-bool RiveGLBridge::prepareFrame(QQuickWindow* window,
-  QRhiCommandBuffer* commandBuffer)
-{
+  Q_UNUSED(painter);
+  Q_UNUSED(pixelSize);
+  Q_UNUSED(targetYUp);
   Q_UNUSED(commandBuffer);
   m_window = window;
   if (!m_outputTexture) {

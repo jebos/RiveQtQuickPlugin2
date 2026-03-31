@@ -1,18 +1,22 @@
 #pragma once
 
-#include "rivebackendbridge.h"
-
-#ifdef RIVEQT_ENABLE_METAL
-
 #include <memory>
 
-namespace rive::gpu {
-class RenderContext;
-class RenderTargetMetal;
-} // namespace rive::gpu
+#include <QImage>
+#include <QSize>
 
-class RiveMetalBridge : public RiveBackendBridge {
+#include "rivebackendbridge.h"
+
+class QPainter;
+class QQuickWindow;
+
+class QPainterRiveFactory;
+
+class RiveSoftwareBridge final : public RiveBackendBridge {
   public:
+  RiveSoftwareBridge();
+  ~RiveSoftwareBridge() override;
+
   QSGRendererInterface::GraphicsApi api() const override;
   TargetKind targetKind() const override;
   bool syncPresentation(QQuickWindow* window,
@@ -31,17 +35,11 @@ class RiveMetalBridge : public RiveBackendBridge {
   void release() override;
 
   private:
-  struct SharedContext;
-
-  bool ensureContext(QQuickWindow* window,
-    QRhiCommandBuffer* commandBuffer);
-
+  QPainterRiveFactory* m_factory { nullptr };
   QQuickWindow* m_window { nullptr };
-  QRhiTexture* m_outputTexture { nullptr };
+  QPainter* m_painter { nullptr };
   QSize m_outputPixelSize;
-  std::shared_ptr<SharedContext> m_sharedContext;
-  rive::rcp<rive::gpu::RenderTargetMetal> m_renderTarget;
-  uint64_t m_frameNumber { 0 };
+  bool m_targetYUp { false };
 };
 
-#endif
+std::unique_ptr<RiveBackendBridge> createRiveSoftwareBridge();

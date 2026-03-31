@@ -1,11 +1,15 @@
 #include "riverendernode.h"
 
 #include <mutex>
+#include <optional>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 
 #include <QMatrix4x4>
+#include <QPainter>
+#include <QPainterPath>
+#include <QtCore/qscopeguard.h>
 #include <QtMath>
 #include <QtQuick/QQuickWindow>
 #include <QtQuick/QSGRenderNode>
@@ -75,6 +79,32 @@ std::mutex g_sharedDocumentMutex;
 bool isLocalLikeSourceUrl(const QUrl& url)
 {
   return url.isLocalFile() || url.scheme().isEmpty() || url.scheme() == "qrc";
+}
+
+std::optional<QColor> clearColorFromObject(QObject* object)
+{
+  if (!object) {
+    return std::nullopt;
+  }
+
+  const QVariant colorVariant = object->property("color");
+  if (colorVariant.isValid() && colorVariant.canConvert<QColor>()) {
+    const QColor color = colorVariant.value<QColor>();
+    if (color.isValid() && color.alpha() > 0) {
+      return color;
+    }
+  }
+
+  const QVariant backgroundVariant = object->property("background");
+  if (backgroundVariant.isValid()) {
+    if (QObject* backgroundObject = backgroundVariant.value<QObject*>()) {
+      if (auto backgroundColor = clearColorFromObject(backgroundObject)) {
+        return backgroundColor;
+      }
+    }
+  }
+
+  return std::nullopt;
 }
 
 std::vector<rive::CustomProperty*> scriptedObjectCustomProperties(rive::ScriptedObject* object)
@@ -409,12 +439,32 @@ void RiveRenderNode::sync(const RiveRenderState& state)
   m_dirtySelection = m_loadedRevision != state.sourceRevision || m_state.artboard != state.artboard || m_state.artboardIndex != state.artboardIndex || m_state.animation != state.animation || m_state.stateMachine != state.stateMachine || m_state.viewModel != state.viewModel;
   m_state = state;
 
+  if (m_item) {
+    const QPointF origin = m_item->mapToScene(QPointF(0.0, 0.0));
+    const QPointF unitX = m_item->mapToScene(QPointF(1.0, 0.0));
+    const QPointF unitY = m_item->mapToScene(QPointF(0.0, 1.0));
+    const QPointF xAxis = unitX - origin;
+    const QPointF yAxis = unitY - origin;
+    m_itemToSceneTransform = QTransform(xAxis.x(),
+      xAxis.y(),
+      yAxis.x(),
+      yAxis.y(),
+      origin.x(),
+      origin.y());
+  } else {
+    m_itemToSceneTransform.reset();
+  }
+
   if (sourceChanged) {
     releaseResources();
   }
 
   if (m_textureNode) {
     m_textureNode->setRect(itemRect());
+  }
+
+  if (m_commandNode) {
+    m_commandNode->markDirty(QSGNode::DirtyMaterial | QSGNode::DirtyForceUpdate);
   }
 
   if (!m_item || !m_item->window() || m_state.sourceBytes.isEmpty()) {
@@ -441,24 +491,20 @@ void RiveRenderNode::sync(const RiveRenderState& state)
 
 void RiveRenderNode::render(const QSGRenderNode::RenderState*)
 {
-  if (!m_item || !m_item->window() || m_state.sourceBytes.isEmpty()) {
+  if (!m_item || !m_item->window()) {
     return;
   }
 
-  QRhiCommandBuffer* cb = m_commandNode->commandBuffer();
-  if (!cb) {
-    qCDebug(lcRiveRenderNode) << "Qt did not provide a QRhi command buffer.";
-    QPointer<RiveItem> item = m_item;
-    qint64 sourceRevision = m_state.sourceRevision;
-    QMetaObject::invokeMethod(
-      item,
-      [item, sourceRevision]() {
-        if (item) {
-          item->setRuntimeError(sourceRevision,
-            "Qt did not provide a QRhi command buffer.");
-        }
-      },
-      Qt::QueuedConnection);
+  if (m_state.sourceBytes.isEmpty()) {
+    auto* rendererInterface = m_item->window()->rendererInterface();
+    if (rendererInterface &&
+        rendererInterface->graphicsApi() == QSGRendererInterface::Software) {
+      if (auto* painter = static_cast<QPainter*>(rendererInterface->getResource(
+            m_item->window(),
+            QSGRendererInterface::PainterResource))) {
+        clearSoftwarePresentation(painter);
+      }
+    }
     return;
   }
 
@@ -478,7 +524,72 @@ void RiveRenderNode::render(const QSGRenderNode::RenderState*)
     return;
   }
 
-  if (!m_bridge->prepareFrame(m_item->window(), cb) || !ensureDocument()) {
+  QRhiCommandBuffer* cb = m_commandNode->commandBuffer();
+  QPainter* painter = nullptr;
+  bool restorePainterState = false;
+  if (m_bridge->targetKind() == RiveBackendBridge::TargetKind::Painter) {
+    auto* rendererInterface = m_item->window()->rendererInterface();
+    painter = rendererInterface
+      ? static_cast<QPainter*>(rendererInterface->getResource(
+          m_item->window(),
+          QSGRendererInterface::PainterResource))
+      : nullptr;
+    if (!painter) {
+      qCDebug(lcRiveRenderNode) << "Qt did not provide a software painter.";
+      QPointer<RiveItem> item = m_item;
+      qint64 sourceRevision = m_state.sourceRevision;
+      QMetaObject::invokeMethod(
+        item,
+        [item, sourceRevision]() {
+          if (item) {
+            item->setRuntimeError(sourceRevision,
+              "Qt did not provide a software painter.");
+          }
+        },
+        Qt::QueuedConnection);
+      return;
+    }
+
+    painter->save();
+    restorePainterState = true;
+    clearSoftwarePresentation(painter);
+    const QRectF sceneRect = m_itemToSceneTransform.mapRect(itemRect());
+    painter->setWorldTransform(QTransform(), false);
+    painter->setClipRect(sceneRect, Qt::IntersectClip);
+    painter->setWorldTransform(m_itemToSceneTransform, false);
+    if (m_commandNode) {
+      painter->setOpacity(m_commandNode->inheritedOpacity());
+    } else {
+      painter->setOpacity(1.0);
+    }
+  } else if (!cb) {
+    qCDebug(lcRiveRenderNode) << "Qt did not provide a QRhi command buffer.";
+    QPointer<RiveItem> item = m_item;
+    qint64 sourceRevision = m_state.sourceRevision;
+    QMetaObject::invokeMethod(
+      item,
+      [item, sourceRevision]() {
+        if (item) {
+          item->setRuntimeError(sourceRevision,
+            "Qt did not provide a QRhi command buffer.");
+        }
+      },
+      Qt::QueuedConnection);
+    return;
+  }
+
+  auto restorePainter = qScopeGuard([painter, restorePainterState]() {
+    if (restorePainterState && painter) {
+      painter->restore();
+    }
+  });
+
+  if (!m_bridge->beginFrame(m_item->window(),
+        cb,
+        painter,
+        m_targetPixelSize,
+        m_targetYUp)
+    || !ensureDocument()) {
     qCDebug(lcRiveRenderNode) << "Failed to prepare the Rive frame.";
     QPointer<RiveItem> item = m_item;
     qint64 sourceRevision = m_state.sourceRevision;
@@ -534,13 +645,43 @@ void RiveRenderNode::render(const QSGRenderNode::RenderState*)
             "Failed to render the Rive scene.");
         }
       },
-      Qt::QueuedConnection);
+        Qt::QueuedConnection);
     return;
   }
   postReady(m_state.sourceRevision);
   if (m_state.playing && keepGoing) {
     scheduleUpdate(m_state.sourceRevision);
   }
+}
+
+void RiveRenderNode::clearSoftwarePresentation(QPainter* painter) const
+{
+  if (!painter) {
+    return;
+  }
+
+  QColor clearColor = m_item && m_item->window()
+    ? m_item->window()->color()
+    : QColor(Qt::transparent);
+  for (QQuickItem* item = m_item ? m_item->parentItem() : nullptr; item;
+    item = item->parentItem()) {
+    if (auto ancestorColor = clearColorFromObject(item)) {
+      clearColor = *ancestorColor;
+      break;
+    }
+  }
+
+  QPainterPath itemPath;
+  itemPath.addRect(itemRect());
+
+  painter->save();
+  painter->setWorldTransform(QTransform(), false);
+  painter->setOpacity(1.0);
+  painter->setCompositionMode(QPainter::CompositionMode_Source);
+  const QPainterPath scenePath = m_itemToSceneTransform.map(itemPath);
+  painter->setClipPath(scenePath, Qt::IntersectClip);
+  painter->fillPath(scenePath, clearColor);
+  painter->restore();
 }
 
 void RiveRenderNode::releaseResources()
@@ -606,6 +747,12 @@ bool RiveRenderNode::ensurePresentationTexture()
   }
 
   m_targetPixelSize = pixelSize;
+  if (m_bridge->targetKind() == RiveBackendBridge::TargetKind::Painter) {
+    m_targetYUp = false;
+    clearSceneGraphTexture();
+    return true;
+  }
+
   m_targetYUp = m_item->window()->rhi() && m_item->window()->rhi()->isYUpInFramebuffer();
 
   auto* outputTexture = m_bridge->outputTexture();
@@ -1164,6 +1311,10 @@ rive::Mat2D RiveRenderNode::artboardToItemTransform() const
 
 rive::Mat2D RiveRenderNode::itemToTargetTransform() const
 {
+  if (m_bridge && m_bridge->targetKind() == RiveBackendBridge::TargetKind::Painter) {
+    return {};
+  }
+
   if (m_targetPixelSize.isEmpty() || m_state.itemSize.isEmpty()) {
     return {};
   }

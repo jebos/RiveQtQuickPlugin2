@@ -7,6 +7,7 @@
 #include <QPointer>
 #include <QSGNode>
 #include <QSGRenderNode>
+#include <QTransform>
 
 #include "riveinspector.h"
 #include "riverenderstate.h"
@@ -17,6 +18,7 @@
 class RiveBackendBridge;
 class RiveFileAssetLoader;
 class RiveItem;
+class QPainter;
 class QSGSimpleTextureNode;
 class QSGTexture;
 class QRhiTexture;
@@ -77,6 +79,7 @@ class RiveRenderNode : public QObject, public QSGNode {
   rive::Vec2D itemPointToArtboard(const QPointF& point) const;
   QSize presentationPixelSize() const;
   QRectF itemRect() const;
+  void clearSoftwarePresentation(QPainter* painter) const;
   void render(const QSGRenderNode::RenderState* state);
   void releaseResources();
   void clearSceneGraphTexture();
@@ -109,4 +112,5 @@ class RiveRenderNode : public QObject, public QSGNode {
   qint64 m_lastPostedRevision { -1 };
   QSize m_targetPixelSize;
   bool m_targetYUp { false };
+  QTransform m_itemToSceneTransform;
 };

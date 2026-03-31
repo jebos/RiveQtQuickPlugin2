@@ -62,9 +62,17 @@ Window {
     function schedulePreviewSourceRefresh(forceReload) {
         pendingPreviewSource = catalog.currentHasPreview ? catalog.currentRiveSource : ""
 
-        if (!forceReload && activePreviewSource.toString() === pendingPreviewSource.toString()) {
+        if (!forceReload &&
+                !previewSwitchPendingClear &&
+                activePreviewSource.toString() === pendingPreviewSource.toString()) {
             return
         }
+
+        if (previewSwitchPendingClear) {
+            return
+        }
+
+        sourceSwitchTimer.stop()
 
         if (activePreviewSource.toString().length > 0) {
             previewSwitchPendingClear = true

@@ -110,6 +110,26 @@ struct FrameSampleStats
     QSet<QRgb> quantizedChangedColors;
 };
 
+struct FrameDiffThreshold
+{
+    double meanChannelError = 0.0;
+    int maxPerPixelError = 0;
+    double maxBadPixelRatio = 0.0;
+};
+
+struct TestOptions
+{
+    QSGRendererInterface::GraphicsApi graphicsApi = QSGRendererInterface::Unknown;
+    QString captureDir;
+    QString compareDir;
+};
+
+TestOptions g_testOptions;
+
+constexpr int kRiveStatusNull = 0;
+constexpr int kRiveStatusLoading = 1;
+constexpr int kRiveStatusReady = 2;
+
 QSGRendererInterface::GraphicsApi defaultGraphicsApi()
 {
 #if defined(Q_OS_WIN)
@@ -163,6 +183,10 @@ QSGRendererInterface::GraphicsApi graphicsApiFromName(const QString& name, QStri
     {
         return QSGRendererInterface::Metal;
     }
+    if (lowered == QStringLiteral("software"))
+    {
+        return QSGRendererInterface::Software;
+    }
 
     if (errorString)
     {
@@ -171,13 +195,17 @@ QSGRendererInterface::GraphicsApi graphicsApiFromName(const QString& name, QStri
     return QSGRendererInterface::Unknown;
 }
 
-QSGRendererInterface::GraphicsApi graphicsApiFromCommandLine(int argc,
-                                                             char** argv,
-                                                             QString* errorString = nullptr)
+TestOptions optionsFromCommandLine(int argc,
+                                  char** argv,
+                                  QString* errorString = nullptr)
 {
+    TestOptions options;
+    options.graphicsApi = defaultGraphicsApi();
+
     for (int i = 1; i < argc; ++i)
     {
-        if (QString::fromLocal8Bit(argv[i]) == QStringLiteral("--graphics-api"))
+        const QString argument = QString::fromLocal8Bit(argv[i]);
+        if (argument == QStringLiteral("--graphics-api"))
         {
             if (i + 1 >= argc)
             {
@@ -185,13 +213,49 @@ QSGRendererInterface::GraphicsApi graphicsApiFromCommandLine(int argc,
                 {
                     *errorString = QStringLiteral("--graphics-api requires a value");
                 }
-                return QSGRendererInterface::Unknown;
+                return {};
             }
-            return graphicsApiFromName(QString::fromLocal8Bit(argv[i + 1]), errorString);
+            options.graphicsApi = graphicsApiFromName(QString::fromLocal8Bit(argv[i + 1]), errorString);
+            if (options.graphicsApi == QSGRendererInterface::Unknown)
+            {
+                return {};
+            }
+            ++i;
+            continue;
+        }
+
+        if (argument == QStringLiteral("--capture-dir"))
+        {
+            if (i + 1 >= argc)
+            {
+                if (errorString)
+                {
+                    *errorString = QStringLiteral("--capture-dir requires a value");
+                }
+                return {};
+            }
+            options.captureDir = QString::fromLocal8Bit(argv[i + 1]);
+            ++i;
+            continue;
+        }
+
+        if (argument == QStringLiteral("--compare-dir"))
+        {
+            if (i + 1 >= argc)
+            {
+                if (errorString)
+                {
+                    *errorString = QStringLiteral("--compare-dir requires a value");
+                }
+                return {};
+            }
+            options.compareDir = QString::fromLocal8Bit(argv[i + 1]);
+            ++i;
+            continue;
         }
     }
 
-    return defaultGraphicsApi();
+    return options;
 }
 
 QString toQmlStringLiteral(const QString& value)
@@ -220,6 +284,169 @@ QRgb quantizeColor(const QColor& color)
     return qRgb(quantizeChannel(color.red()),
                 quantizeChannel(color.green()),
                 quantizeChannel(color.blue()));
+}
+
+QString frameCapturePath(const QString& captureDir, const QString& key)
+{
+    return QDir(captureDir).filePath(key + QStringLiteral(".png"));
+}
+
+FrameDiffThreshold thresholdForKey(const QString& key)
+{
+    const bool softwareCompare = g_testOptions.graphicsApi == QSGRendererInterface::Software;
+
+    if (key == QStringLiteral("hello_world"))
+    {
+        return softwareCompare ? FrameDiffThreshold{8.0, 16, 0.25}
+                               : FrameDiffThreshold{8.0, 16, 0.02};
+    }
+    if (key == QStringLiteral("hosted_image_file"))
+    {
+        return softwareCompare ? FrameDiffThreshold{24.0, 32, 0.30}
+                               : FrameDiffThreshold{12.0, 24, 0.05};
+    }
+    if (key == QStringLiteral("group_effect"))
+    {
+        return softwareCompare ? FrameDiffThreshold{36.0, 64, 0.50}
+                               : FrameDiffThreshold{20.0, 32, 0.12};
+    }
+    return softwareCompare ? FrameDiffThreshold{8.0, 16, 0.25}
+                           : FrameDiffThreshold{8.0, 16, 0.02};
+}
+
+bool framesMatchWithinThreshold(const QImage& actualFrame,
+                                const QImage& expectedFrame,
+                                const FrameDiffThreshold& threshold,
+                                const char* label,
+                                const QString& key)
+{
+    const QImage normalizedActual =
+        actualFrame.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
+    const QImage normalizedExpected =
+        expectedFrame.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
+
+    if (normalizedExpected.size() != normalizedActual.size())
+    {
+        std::fprintf(stderr,
+                     "%s: size mismatch actual=%dx%d expected=%dx%d\n",
+                     label,
+                     normalizedActual.width(),
+                     normalizedActual.height(),
+                     normalizedExpected.width(),
+                     normalizedExpected.height());
+        std::fflush(stderr);
+        return false;
+    }
+
+    quint64 pixelCount = 0;
+    double totalChannelError = 0.0;
+    quint64 badPixelCount = 0;
+
+    for (int y = 0; y < normalizedActual.height(); ++y)
+    {
+        const QRgb* actualLine =
+            reinterpret_cast<const QRgb*>(normalizedActual.constScanLine(y));
+        const QRgb* expectedLine =
+            reinterpret_cast<const QRgb*>(normalizedExpected.constScanLine(y));
+        for (int x = 0; x < normalizedActual.width(); ++x)
+        {
+            const QRgb actualPixel = actualLine[x];
+            const QRgb expectedPixel = expectedLine[x];
+            const int channelError =
+                (qAbs(qRed(actualPixel) - qRed(expectedPixel)) +
+                 qAbs(qGreen(actualPixel) - qGreen(expectedPixel)) +
+                 qAbs(qBlue(actualPixel) - qBlue(expectedPixel)) +
+                 qAbs(qAlpha(actualPixel) - qAlpha(expectedPixel))) /
+                4;
+            totalChannelError += channelError;
+            ++pixelCount;
+            if (channelError > threshold.maxPerPixelError)
+            {
+                ++badPixelCount;
+            }
+        }
+    }
+
+    const double meanChannelError = pixelCount > 0
+        ? totalChannelError / static_cast<double>(pixelCount)
+        : 0.0;
+    const double badPixelRatio = pixelCount > 0
+        ? static_cast<double>(badPixelCount) / static_cast<double>(pixelCount)
+        : 0.0;
+
+    if (meanChannelError > threshold.meanChannelError ||
+        badPixelRatio > threshold.maxBadPixelRatio)
+    {
+        const QString dumpBase =
+            QDir(QDir::tempPath()).filePath(QStringLiteral("%1_%2")
+                                                .arg(QString::fromUtf8(label), key));
+        normalizedActual.save(dumpBase + QStringLiteral("_actual.png"));
+        normalizedExpected.save(dumpBase + QStringLiteral("_expected.png"));
+        std::fprintf(stderr,
+                     "%s: frame diff failed key=%s mean=%.3f bad=%.3f%% dump=%s\n",
+                     label,
+                     qPrintable(key),
+                     meanChannelError,
+                     badPixelRatio * 100.0,
+                     qPrintable(dumpBase));
+        std::fflush(stderr);
+        return false;
+    }
+
+    return true;
+}
+
+bool recordFrame(const QImage& frame, const QString& key, const char* label)
+{
+    const QImage normalized = frame.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
+
+    if (!g_testOptions.captureDir.isEmpty())
+    {
+        QDir captureDir(g_testOptions.captureDir);
+        if (!captureDir.mkpath(QStringLiteral(".")))
+        {
+            std::fprintf(stderr,
+                         "%s: failed to create capture directory %s\n",
+                         label,
+                         qPrintable(g_testOptions.captureDir));
+            std::fflush(stderr);
+            return false;
+        }
+
+        const QString capturePath = frameCapturePath(g_testOptions.captureDir, key);
+        if (!normalized.save(capturePath))
+        {
+            std::fprintf(stderr,
+                         "%s: failed to save capture %s\n",
+                         label,
+                         qPrintable(capturePath));
+            std::fflush(stderr);
+            return false;
+        }
+    }
+
+    if (g_testOptions.compareDir.isEmpty())
+    {
+        return true;
+    }
+
+    const QString baselinePath = frameCapturePath(g_testOptions.compareDir, key);
+    QImage baseline;
+    if (!baseline.load(baselinePath))
+    {
+        std::fprintf(stderr,
+                     "%s: missing baseline frame %s\n",
+                     label,
+                     qPrintable(baselinePath));
+        std::fflush(stderr);
+        return false;
+    }
+
+    return framesMatchWithinThreshold(normalized,
+                                      baseline,
+                                      thresholdForKey(key),
+                                      label,
+                                      key);
 }
 
 FrameSampleStats sampleFrame(const QImage& frame,
@@ -351,7 +578,7 @@ bool waitForRiveViewsReady(QQuickWindow* window,
             window->requestUpdate();
             for (QObject* riveView : riveViews)
             {
-                if (!riveView || riveView->property("status").toInt() == 1)
+                if (!riveView || riveView->property("status").toInt() == kRiveStatusLoading)
                 {
                     return false;
                 }
@@ -365,7 +592,7 @@ bool waitForRiveViewsReady(QQuickWindow* window,
     {
         QObject* riveView = riveViews.at(index);
         const int status = riveView ? riveView->property("status").toInt() : -1;
-        if (status != 2)
+        if (status != kRiveStatusReady)
         {
             std::fprintf(stderr,
                          "%s-window[%d]: status=%d error=%s\n",
@@ -382,12 +609,48 @@ bool waitForRiveViewsReady(QQuickWindow* window,
     return allReady;
 }
 
-bool renderAssetAndCollectFrame(QQmlEngine& engine,
-                                const QString& sourceUrl,
-                                const QSize& size,
-                                const QColor& background,
-                                const char* label,
-                                QImage* frameOut)
+bool waitForRiveViewStatus(QQuickWindow* window,
+                           QObject* riveView,
+                           int expectedStatus,
+                           int timeoutMs,
+                           const char* label,
+                           const char* phase)
+{
+    const bool reached = waitFor(
+        [window, riveView, expectedStatus]() {
+            if (!window || !riveView)
+            {
+                return false;
+            }
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            window->requestUpdate();
+            return riveView->property("status").toInt() == expectedStatus;
+        },
+        timeoutMs);
+
+    if (reached)
+    {
+        return true;
+    }
+
+    std::fprintf(stderr,
+                 "%s-%s: status=%d error=%s\n",
+                 label,
+                 phase,
+                 riveView ? riveView->property("status").toInt() : -1,
+                 riveView ? qPrintable(riveView->property("errorString").toString())
+                          : "riveView missing");
+    std::fflush(stderr);
+    return false;
+}
+
+bool renderAssetAndCollectFrameWithPlaying(QQmlEngine& engine,
+                                           const QString& sourceUrl,
+                                           const QSize& size,
+                                           const QColor& background,
+                                           bool playing,
+                                           const char* label,
+                                           QImage* frameOut)
 {
     const QString source = QString(R"(
         import QtQuick
@@ -404,6 +667,7 @@ bool renderAssetAndCollectFrame(QQmlEngine& engine,
                 anchors.fill: parent
                 anchors.margins: 12
                 fit: RiveItem.Contain
+                playing: %5
                 source: %4
             }
         }
@@ -411,7 +675,9 @@ bool renderAssetAndCollectFrame(QQmlEngine& engine,
                                .arg(size.width())
                                .arg(size.height())
                                .arg(background.name())
-                               .arg(toQmlStringLiteral(sourceUrl));
+                               .arg(toQmlStringLiteral(sourceUrl))
+                               .arg(playing ? QStringLiteral("true")
+                                            : QStringLiteral("false"));
 
     QQmlComponent component(&engine);
     component.setData(source.toUtf8(), QUrl(QStringLiteral("memory:%1-window.qml").arg(QString::fromUtf8(label))));
@@ -480,11 +746,28 @@ bool renderAssetAndCollectFrame(QQmlEngine& engine,
     return true;
 }
 
+bool renderAssetAndCollectFrame(QQmlEngine& engine,
+                                const QString& sourceUrl,
+                                const QSize& size,
+                                const QColor& background,
+                                const char* label,
+                                QImage* frameOut)
+{
+    return renderAssetAndCollectFrameWithPlaying(engine,
+                                                 sourceUrl,
+                                                 size,
+                                                 background,
+                                                 true,
+                                                 label,
+                                                 frameOut);
+}
+
 bool renderAndValidate(QQmlEngine& engine,
                        const QString& assetFile,
                        const QSize& size,
                        const QColor& background,
-                       const char* label)
+                       const char* label,
+                       const QString& frameKey)
 {
     QImage frame;
     if (!renderAssetAndCollectFrame(engine,
@@ -505,13 +788,461 @@ bool renderAndValidate(QQmlEngine& engine,
         return false;
     }
 
+    if (!recordFrame(frame, frameKey, label))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool switchAnimationAndStateMachineSelection(QQmlEngine& engine,
+                                             const char* label)
+{
+    const QSize size(260, 260);
+    const QColor background(QStringLiteral("#132033"));
+    const QString source = QString(R"(
+        import QtQuick
+        import QtQuick.Window
+        import RiveQtQuick
+        Window {
+            width: %1
+            height: %2
+            visible: true
+            color: "%3"
+            RiveItem {
+                id: riveView
+                objectName: "riveView"
+                anchors.fill: parent
+                anchors.margins: 12
+                fit: RiveItem.Contain
+                playing: false
+                source: %4
+                stateMachine: "State Machine 1"
+            }
+        }
+    )")
+                               .arg(size.width())
+                               .arg(size.height())
+                               .arg(background.name())
+                               .arg(toQmlStringLiteral(assetUrl(QStringLiteral("hello_world.riv"))));
+
+    QQmlComponent component(&engine);
+    component.setData(source.toUtf8(),
+                      QUrl(QStringLiteral("memory:%1-selection-switch.qml")
+                               .arg(QString::fromUtf8(label))));
+    if (component.isLoading())
+    {
+        QEventLoop loop;
+        QObject::connect(&component,
+                         &QQmlComponent::statusChanged,
+                         &loop,
+                         [&](QQmlComponent::Status status) {
+                             if (status != QQmlComponent::Loading)
+                             {
+                                 loop.quit();
+                             }
+                         });
+        loop.exec();
+    }
+
+    if (!component.isReady())
+    {
+        std::fprintf(stderr, "%s-selection-switch: %s\n", label, qPrintable(component.errorString()));
+        std::fflush(stderr);
+        return false;
+    }
+
+    QScopedPointer<QObject> root(component.create());
+    auto* window = qobject_cast<QQuickWindow*>(root.get());
+    if (!window)
+    {
+        std::fprintf(stderr, "%s-selection-switch: root is not a QQuickWindow\n", label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    QObject* riveView = window->findChild<QObject*>(QStringLiteral("riveView"));
+    if (!riveView)
+    {
+        std::fprintf(stderr, "%s-selection-switch: riveView not found\n", label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    window->show();
+    if (!waitForRiveViewsReady(window, {riveView}, label))
+    {
+        return false;
+    }
+
+    riveView->setProperty("animation", QStringLiteral("Timeline 1"));
+    const bool animationApplied = waitFor(
+        [window, riveView]() {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            window->requestUpdate();
+            return riveView->property("status").toInt() == kRiveStatusReady &&
+                   riveView->property("animation").toString() == QStringLiteral("Timeline 1") &&
+                   riveView->property("stateMachine").toString().isEmpty() &&
+                   riveView->property("errorString").toString().isEmpty();
+        },
+        5000);
+    if (!animationApplied)
+    {
+        std::fprintf(stderr,
+                     "%s-selection-switch: animation selection did not settle cleanly (animation=%s stateMachine=%s status=%d error=%s)\n",
+                     label,
+                     qPrintable(riveView->property("animation").toString()),
+                     qPrintable(riveView->property("stateMachine").toString()),
+                     riveView->property("status").toInt(),
+                     qPrintable(riveView->property("errorString").toString()));
+        std::fflush(stderr);
+        return false;
+    }
+
+    const QImage animationFrame = window->grabWindow();
+    const FrameSampleStats animationStats = sampleFrame(animationFrame, animationFrame.rect(), background);
+    if (animationFrame.isNull() || animationStats.changedSamples < 25)
+    {
+        std::fprintf(stderr,
+                     "%s-selection-switch: animation frame looked blank after switching from state machine\n",
+                     label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    riveView->setProperty("stateMachine", QStringLiteral("State Machine 1"));
+    const bool stateMachineApplied = waitFor(
+        [window, riveView]() {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            window->requestUpdate();
+            return riveView->property("status").toInt() == kRiveStatusReady &&
+                   riveView->property("stateMachine").toString() == QStringLiteral("State Machine 1") &&
+                   riveView->property("animation").toString().isEmpty() &&
+                   riveView->property("errorString").toString().isEmpty();
+        },
+        5000);
+    if (!stateMachineApplied)
+    {
+        std::fprintf(stderr,
+                     "%s-selection-switch: state machine selection did not settle cleanly (animation=%s stateMachine=%s status=%d error=%s)\n",
+                     label,
+                     qPrintable(riveView->property("animation").toString()),
+                     qPrintable(riveView->property("stateMachine").toString()),
+                     riveView->property("status").toInt(),
+                     qPrintable(riveView->property("errorString").toString()));
+        std::fflush(stderr);
+        return false;
+    }
+
+    const QImage stateMachineFrame = window->grabWindow();
+    const FrameSampleStats stateMachineStats = sampleFrame(stateMachineFrame, stateMachineFrame.rect(), background);
+    if (stateMachineFrame.isNull() || stateMachineStats.changedSamples < 25)
+    {
+        std::fprintf(stderr,
+                     "%s-selection-switch: state machine frame looked blank after switching from animation\n",
+                     label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    window->hide();
+    return true;
+}
+
+bool switchSourceAndValidateNoLeak(QQmlEngine& engine,
+                                   const QString& initialAssetFile,
+                                   const QString& finalAssetFile,
+                                   const QSize& size,
+                                   const QColor& background,
+                                   const char* label,
+                                   const QString& frameKey)
+{
+    QImage expectedFrame;
+    const QByteArray baselineLabel = QByteArray(label) + "_baseline";
+    if (!renderAssetAndCollectFrameWithPlaying(engine,
+                                               assetUrl(finalAssetFile),
+                                               size,
+                                               background,
+                                               false,
+                                               baselineLabel.constData(),
+                                               &expectedFrame))
+    {
+        return false;
+    }
+
+    const QString source = QString(R"(
+        import QtQuick
+        import QtQuick.Window
+        import RiveQtQuick
+        Window {
+            width: %1
+            height: %2
+            visible: true
+            color: "%3"
+            RiveItem {
+                id: riveView
+                objectName: "riveView"
+                anchors.fill: parent
+                anchors.margins: 12
+                fit: RiveItem.Contain
+                playing: false
+                source: %4
+            }
+        }
+    )")
+                               .arg(size.width())
+                               .arg(size.height())
+                               .arg(background.name())
+                               .arg(toQmlStringLiteral(assetUrl(initialAssetFile)));
+
+    QQmlComponent component(&engine);
+    component.setData(source.toUtf8(),
+                      QUrl(QStringLiteral("memory:%1-source-switch.qml")
+                               .arg(QString::fromUtf8(label))));
+    if (component.isLoading())
+    {
+        QEventLoop loop;
+        QObject::connect(&component,
+                         &QQmlComponent::statusChanged,
+                         &loop,
+                         [&](QQmlComponent::Status status) {
+                             if (status != QQmlComponent::Loading)
+                             {
+                                 loop.quit();
+                             }
+                         });
+        loop.exec();
+    }
+
+    if (!component.isReady())
+    {
+        std::fprintf(stderr, "%s-source-switch: %s\n", label, qPrintable(component.errorString()));
+        std::fflush(stderr);
+        return false;
+    }
+
+    QScopedPointer<QObject> root(component.create());
+    auto* window = qobject_cast<QQuickWindow*>(root.get());
+    if (!window)
+    {
+        std::fprintf(stderr, "%s-source-switch: root is not a QQuickWindow\n", label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    QObject* riveView = window->findChild<QObject*>(QStringLiteral("riveView"));
+    if (!riveView)
+    {
+        std::fprintf(stderr, "%s-source-switch: riveView not found\n", label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    window->show();
+    if (!waitForRiveViewsReady(window, {riveView}, label))
+    {
+        return false;
+    }
+
+    riveView->setProperty("source", QUrl());
+    if (!waitForRiveViewStatus(window,
+                               riveView,
+                               kRiveStatusNull,
+                               5000,
+                               label,
+                               "source-clear"))
+    {
+        return false;
+    }
+
+    riveView->setProperty("source", QUrl(assetUrl(finalAssetFile)));
+    if (!waitForRiveViewsReady(window, {riveView}, label))
+    {
+        return false;
+    }
+
+    waitFor([window]() {
+        window->requestUpdate();
+        return window->isExposed();
+    }, 250);
+    QCoreApplication::sendPostedEvents(nullptr, 0);
+
+    const QImage frame = window->grabWindow();
+    if (frame.isNull())
+    {
+        std::fprintf(stderr, "%s-source-switch: grabWindow returned null\n", label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    if (!framesMatchWithinThreshold(frame,
+                                    expectedFrame,
+                                    thresholdForKey(frameKey),
+                                    label,
+                                    QStringLiteral("source_switch_no_leak")))
+    {
+        return false;
+    }
+
+    window->hide();
+    return true;
+}
+
+bool rapidSourceSwitchAndValidateFinalFrame(QQmlEngine& engine,
+                                            const QString& initialAssetFile,
+                                            const QString& intermediateAssetFile,
+                                            const QString& finalAssetFile,
+                                            const QSize& size,
+                                            const QColor& background,
+                                            const char* label,
+                                            const QString& frameKey)
+{
+    QImage expectedFrame;
+    const QByteArray baselineLabel = QByteArray(label) + "_baseline";
+    if (!renderAssetAndCollectFrameWithPlaying(engine,
+                                               assetUrl(finalAssetFile),
+                                               size,
+                                               background,
+                                               false,
+                                               baselineLabel.constData(),
+                                               &expectedFrame))
+    {
+        return false;
+    }
+
+    const QString source = QString(R"(
+        import QtQuick
+        import QtQuick.Window
+        import RiveQtQuick
+        Window {
+            width: %1
+            height: %2
+            visible: true
+            color: "%3"
+            RiveItem {
+                id: riveView
+                objectName: "riveView"
+                anchors.fill: parent
+                anchors.margins: 12
+                fit: RiveItem.Contain
+                playing: false
+                source: %4
+            }
+        }
+    )")
+                               .arg(size.width())
+                               .arg(size.height())
+                               .arg(background.name())
+                               .arg(toQmlStringLiteral(assetUrl(initialAssetFile)));
+
+    QQmlComponent component(&engine);
+    component.setData(source.toUtf8(),
+                      QUrl(QStringLiteral("memory:%1-rapid-source-switch.qml")
+                               .arg(QString::fromUtf8(label))));
+    if (component.isLoading())
+    {
+        QEventLoop loop;
+        QObject::connect(&component,
+                         &QQmlComponent::statusChanged,
+                         &loop,
+                         [&](QQmlComponent::Status status) {
+                             if (status != QQmlComponent::Loading)
+                             {
+                                 loop.quit();
+                             }
+                         });
+        loop.exec();
+    }
+
+    if (!component.isReady())
+    {
+        std::fprintf(stderr, "%s-rapid-source-switch: %s\n", label, qPrintable(component.errorString()));
+        std::fflush(stderr);
+        return false;
+    }
+
+    QScopedPointer<QObject> root(component.create());
+    auto* window = qobject_cast<QQuickWindow*>(root.get());
+    if (!window)
+    {
+        std::fprintf(stderr, "%s-rapid-source-switch: root is not a QQuickWindow\n", label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    QObject* riveView = window->findChild<QObject*>(QStringLiteral("riveView"));
+    if (!riveView)
+    {
+        std::fprintf(stderr, "%s-rapid-source-switch: riveView not found\n", label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    window->show();
+    if (!waitForRiveViewsReady(window, {riveView}, label))
+    {
+        return false;
+    }
+
+    riveView->setProperty("source", QUrl(assetUrl(intermediateAssetFile)));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    window->requestUpdate();
+    riveView->setProperty("source", QUrl(assetUrl(finalAssetFile)));
+    if (!waitForRiveViewsReady(window, {riveView}, label))
+    {
+        return false;
+    }
+
+    const bool settledOnFinalSource = waitFor(
+        [riveView, finalAssetFile]() {
+            const QUrl actualSource = riveView->property("source").toUrl();
+            return actualSource == QUrl(assetUrl(finalAssetFile));
+        },
+        1000);
+    if (!settledOnFinalSource)
+    {
+        std::fprintf(stderr,
+                     "%s-rapid-source-switch: source property settled on %s instead of %s\n",
+                     label,
+                     qPrintable(riveView->property("source").toUrl().toString()),
+                     qPrintable(assetUrl(finalAssetFile)));
+        std::fflush(stderr);
+        return false;
+    }
+
+    waitFor([window]() {
+        window->requestUpdate();
+        return window->isExposed();
+    }, 250);
+    QCoreApplication::sendPostedEvents(nullptr, 0);
+
+    const QImage frame = window->grabWindow();
+    if (frame.isNull())
+    {
+        std::fprintf(stderr, "%s-rapid-source-switch: grabWindow returned null\n", label);
+        std::fflush(stderr);
+        return false;
+    }
+
+    if (!framesMatchWithinThreshold(frame,
+                                    expectedFrame,
+                                    thresholdForKey(frameKey),
+                                    label,
+                                    QStringLiteral("rapid_source_switch_final")))
+    {
+        return false;
+    }
+
+    window->hide();
     return true;
 }
 
 bool renderBlendAndValidate(QQmlEngine& engine,
                             const QSize& size,
                             const QColor& background,
-                            const char* label)
+                            const char* label,
+                            const QString& frameKey)
 {
     QImage frame;
     if (!renderAssetAndCollectFrame(engine,
@@ -531,7 +1262,7 @@ bool renderBlendAndValidate(QQmlEngine& engine,
     {
         const int colorCount = static_cast<int>(stats.quantizedChangedColors.size());
         const QString dumpPath =
-            QDir::temp().filePath(QStringLiteral("%1_opengl_blend_failure.png")
+            QDir(QDir::tempPath()).filePath(QStringLiteral("%1_blend_failure.png")
                                       .arg(QString::fromUtf8(label)));
         frame.save(dumpPath);
         std::fprintf(stderr,
@@ -542,6 +1273,11 @@ bool renderBlendAndValidate(QQmlEngine& engine,
                      colorCount,
                      qPrintable(dumpPath));
         std::fflush(stderr);
+        return false;
+    }
+
+    if (!recordFrame(frame, frameKey, label))
+    {
         return false;
     }
 
@@ -590,16 +1326,21 @@ bool renderAndValidateSharedContext(QQmlEngine& engine,
                                .arg(toQmlStringLiteral(assetUrl(QStringLiteral("hello_world.riv"))));
 
     QQmlComponent component(&engine);
-    component.setData(source.toUtf8(), QUrl(QStringLiteral("memory:%1-shared-context.qml").arg(QString::fromUtf8(label))));
+    component.setData(source.toUtf8(),
+                      QUrl(QStringLiteral("memory:%1-shared-context.qml")
+                               .arg(QString::fromUtf8(label))));
     if (component.isLoading())
     {
         QEventLoop loop;
-        QObject::connect(&component, &QQmlComponent::statusChanged, &loop, [&](QQmlComponent::Status status) {
-            if (status != QQmlComponent::Loading)
-            {
-                loop.quit();
-            }
-        });
+        QObject::connect(&component,
+                         &QQmlComponent::statusChanged,
+                         &loop,
+                         [&](QQmlComponent::Status status) {
+                             if (status != QQmlComponent::Loading)
+                             {
+                                 loop.quit();
+                             }
+                         });
         loop.exec();
     }
 
@@ -941,12 +1682,15 @@ bool interactAndValidateInputs(QQmlEngine& engine, const char* label)
 int main(int argc, char** argv)
 {
     QString graphicsApiError;
-    const auto graphicsApi = graphicsApiFromCommandLine(argc, argv, &graphicsApiError);
+    const TestOptions options = optionsFromCommandLine(argc, argv, &graphicsApiError);
     if (!graphicsApiError.isEmpty())
     {
         std::fprintf(stderr, "qml-tests-startup: %s\n", qPrintable(graphicsApiError));
         return 10;
     }
+
+    g_testOptions = options;
+    const auto graphicsApi = options.graphicsApi;
 
     if (graphicsApi == QSGRendererInterface::OpenGL)
     {
@@ -1008,7 +1752,8 @@ int main(int argc, char** argv)
                            QStringLiteral("hello_world.riv"),
                            QSize(240, 240),
                            QColor(QStringLiteral("#101820")),
-                           "hello_world_render"))
+                           "hello_world_render",
+                           QStringLiteral("hello_world")))
     {
         return 14;
     }
@@ -1031,21 +1776,60 @@ int main(int argc, char** argv)
                            QStringLiteral("hosted_image_file.riv"),
                            QSize(260, 260),
                            QColor(QStringLiteral("#132033")),
-                           "hosted_image_render"))
+                           "hosted_image_render",
+                           QStringLiteral("hosted_image_file")))
     {
         return 16;
     }
 
-    if (graphicsApi == QSGRendererInterface::OpenGL)
+    if (!switchAnimationAndStateMachineSelection(engine, "selection_switch"))
+    {
+        return 20;
+    }
+
+    if (graphicsApi == QSGRendererInterface::Software &&
+        !switchSourceAndValidateNoLeak(engine,
+                                       QStringLiteral("hosted_image_file.riv"),
+                                       QStringLiteral("hello_world.riv"),
+                                       QSize(260, 260),
+                                       QColor(QStringLiteral("#132033")),
+                                       "source_switch_no_leak",
+                                       QStringLiteral("hello_world")))
+    {
+        return 19;
+    }
+
+    if (graphicsApi == QSGRendererInterface::Software &&
+        !rapidSourceSwitchAndValidateFinalFrame(engine,
+                                                QStringLiteral("data_binding_test.riv"),
+                                                QStringLiteral("hosted_image_file.riv"),
+                                                QStringLiteral("hello_world.riv"),
+                                                QSize(260, 260),
+                                                QColor(QStringLiteral("#132033")),
+                                                "rapid_source_switch_final",
+                                                QStringLiteral("hello_world")))
+    {
+        return 21;
+    }
+
+    const bool runBlendCoverage = graphicsApi == QSGRendererInterface::OpenGL ||
+        graphicsApi == QSGRendererInterface::Software ||
+        !g_testOptions.captureDir.isEmpty() ||
+        !g_testOptions.compareDir.isEmpty();
+    if (runBlendCoverage)
     {
         if (!renderBlendAndValidate(engine,
                                     QSize(420, 420),
                                     QColor(QStringLiteral("#12324a")),
-                                    "opengl_blend"))
+                                    "blend_coverage",
+                                    QStringLiteral("group_effect")))
         {
             return 17;
         }
+    }
 
+    if (graphicsApi == QSGRendererInterface::OpenGL)
+    {
         if (!renderAndValidateSharedContext(engine,
                                             QSize(520, 280),
                                             QColor(QStringLiteral("#16202a")),

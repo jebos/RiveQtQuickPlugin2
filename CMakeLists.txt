@@ -47,6 +47,12 @@ if(APPLE)
 endif()
 option(RIVEQT_ENABLE_METAL "Build Metal backend support." ${RIVEQT_ENABLE_METAL_DEFAULT})
 
+set(RIVEQT_ENABLE_SOFTWARE_DEFAULT OFF)
+if(NOT IOS AND NOT ANDROID)
+    set(RIVEQT_ENABLE_SOFTWARE_DEFAULT ON)
+endif()
+option(RIVEQT_ENABLE_SOFTWARE "Build QPainter software backend support." ${RIVEQT_ENABLE_SOFTWARE_DEFAULT})
+
 find_package(Qt6 6.6.0 REQUIRED COMPONENTS Concurrent Core Gui Network Qml Quick QuickControls2 Test QuickTest)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_package(Qt6GuiPrivate 6.6.0 REQUIRED)

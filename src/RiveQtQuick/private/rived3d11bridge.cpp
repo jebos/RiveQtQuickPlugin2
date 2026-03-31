@@ -38,6 +38,11 @@ QSGRendererInterface::GraphicsApi RiveD3D11Bridge::api() const
   return QSGRendererInterface::Direct3D11;
 }
 
+RiveBackendBridge::TargetKind RiveD3D11Bridge::targetKind() const
+{
+  return TargetKind::Texture;
+}
+
 bool RiveD3D11Bridge::syncPresentation(QQuickWindow* window,
   const QSize& pixelSize)
 {
@@ -77,9 +82,15 @@ QRhiTexture* RiveD3D11Bridge::outputTexture() const
   return m_outputTexture;
 }
 
-bool RiveD3D11Bridge::prepareFrame(QQuickWindow* window,
-  QRhiCommandBuffer*)
+bool RiveD3D11Bridge::beginFrame(QQuickWindow* window,
+  QRhiCommandBuffer*,
+  QPainter* painter,
+  const QSize& pixelSize,
+  bool targetYUp)
 {
+  Q_UNUSED(painter);
+  Q_UNUSED(pixelSize);
+  Q_UNUSED(targetYUp);
   m_window = window;
   if (!m_outputTexture) {
     qCDebug(lcRiveD3D11) << "output texture is not initialized.";
