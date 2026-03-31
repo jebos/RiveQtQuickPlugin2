@@ -34,17 +34,14 @@ RiveItem {
 - OpenGL 4.2+ on Windows and Linux through Qt Quick's graphics API switch
 - Vulkan when available in the bundled Rive runtime
 - Metal on macOS and iOS
-- QPainter software rendering on desktop platforms through Qt Quick's
-  `QSGRendererInterface::Software` backend
+- Software rendering through QPainter in a best effort approach (its slower than Hardware and visual losses) 
 
 ### Not supported
+- OpenGL ES
 
-- Android / OpenGL ES
-- desktop OpenGL on Apple platforms
+### Known software limitations of software rendering
 
-### Known software limitations
-
-- software rendering is desktop-only in v1
+- rendering is slower
 - advanced blend parity can differ from GPU backends, especially for
   `hue`, `saturation`, `color`, and `luminosity`
 - feather softness is approximated and may render without the full soft-edge
@@ -114,7 +111,7 @@ QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 
 The desktop OpenGL backend requires an actual OpenGL `4.2+` core context.
 
-Backend selection stays in Qt. For the software backend:
+For the software backend:
 
 ```cpp
 QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
