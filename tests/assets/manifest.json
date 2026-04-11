@@ -43,6 +43,14 @@
       "attribution": "Interactive Icon Set by gabermonti. Design: Silvia Sguotti. Motion & Interaction: Gabriele Montinaro."
     },
     {
+      "path": "tests/assets/rive/26986-50750-scripted-audio-play-stop-volume.riv",
+      "source": "https://public.rive.app/community/runtime-files/226986-50750-scripted-audio-play-stop-volume.riv",
+      "detailUrl": "https://rive.app/marketplace/26986-50750-scripted-audio-play-stop-volume/",
+      "purpose": "Scripted Audio: Play, Stop, Volume",
+      "license": "CC BY 4.0",
+      "attribution": "TeamRive"
+    },
+    {
       "path": "tests/assets/hosted/eve-317.png",
       "source": "tests/unit_tests/assets/out_of_band/eve-317.png",
       "purpose": "hosted image payload",
