@@ -7,7 +7,7 @@
 #include "qpainterrivepaint.h"
 #include "qpainterrivepath.h"
 
-#include "../rivelogging.h"
+#include "rivelogging.h"
 
 #include "rive/math/vec2d.hpp"
 #include "utils/factory_utils.hpp"

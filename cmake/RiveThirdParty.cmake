@@ -4,6 +4,7 @@ set(RIVE_SHEENBIDI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SheenBidi")
 set(RIVE_YOGA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/yoga")
 set(RIVE_PLY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ply")
 set(RIVE_LUAU_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/luau")
+set(RIVE_MINIAUDIO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/miniaudio")
 set(RIVE_LIBHYDROGEN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/libhydrogen")
 set(RIVE_DIRECTX_HEADERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/directx-headers")
 set(RIVE_GENERATED_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/shaders")
@@ -218,6 +219,32 @@ target_include_directories(rive_yoga
 )
 target_compile_definitions(rive_yoga PUBLIC YOGA_EXPORT=)
 
+add_library(rive_miniaudio STATIC)
+file(GLOB RIVE_MINIAUDIO_HEADERS CONFIGURE_DEPENDS
+    "${RIVE_MINIAUDIO_DIR}/*.h"
+)
+if(APPLE OR IOS)
+    file(GLOB RIVE_MINIAUDIO_SOURCES CONFIGURE_DEPENDS
+        "${RIVE_CPP_DIR}/dependencies/miniaudio.m"
+    )
+else()
+    file(GLOB RIVE_MINIAUDIO_SOURCES CONFIGURE_DEPENDS
+        "${RIVE_MINIAUDIO_DIR}/*.c"
+    )
+endif()
+
+target_sources(rive_miniaudio
+    PRIVATE
+        ${RIVE_MINIAUDIO_HEADERS}
+        ${RIVE_MINIAUDIO_SOURCES}
+)
+
+target_include_directories(rive_miniaudio
+    PUBLIC
+        "${RIVE_MINIAUDIO_DIR}"
+        "${RIVE_CPP_DIR}/dependencies"
+)
+
 add_library(rive_luau_common STATIC)
 file(GLOB RIVE_LUAU_COMMON_SOURCES CONFIGURE_DEPENDS
     "${RIVE_LUAU_DIR}/Common/src/*.cpp"
@@ -294,9 +321,10 @@ add_library(rive_official STATIC)
 add_dependencies(rive_official rive_renderer_shaders)
 
 file(GLOB_RECURSE RIVE_RUNTIME_SOURCES CONFIGURE_DEPENDS
+    "${RIVE_CPP_DIR}/include/*.hpp"
     "${RIVE_CPP_DIR}/src/*.cpp"
 )
-list(FILTER RIVE_RUNTIME_SOURCES EXCLUDE REGEX "/audio/")
+
 list(FILTER RIVE_RUNTIME_SOURCES EXCLUDE REGEX "/command_queue\\.cpp$")
 list(FILTER RIVE_RUNTIME_SOURCES EXCLUDE REGEX "/command_server\\.cpp$")
 file(GLOB_RECURSE RIVE_RENDERER_SOURCES CONFIGURE_DEPENDS
@@ -375,6 +403,7 @@ target_compile_definitions(rive_official
         WITH_RIVE_TEXT
         WITH_RIVE_LAYOUT
         WITH_RIVE_SCRIPTING
+        WITH_RIVE_AUDIO
         _RIVE_INTERNAL_
         YOGA_EXPORT=
         $<$<BOOL:${RIVEQT_ENABLE_OPENGL}>:RIVE_DESKTOP_GL>
@@ -425,6 +454,7 @@ target_link_libraries(rive_official
         rive_yoga
         rive_luau_vm
         rive_libhydrogen
+        rive_miniaudio
 )
 target_compile_features(rive_official PUBLIC cxx_std_20)
 if(MSVC)

@@ -10,7 +10,7 @@
 #include <QtQuick/QQuickWindow>
 
 #include "private/rivelogging.h"
-#include "private/riverendernode.h"
+#include "private/rendering/riverendernode.h"
 #include "rivebinding.h"
 
 namespace {

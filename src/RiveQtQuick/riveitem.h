@@ -8,7 +8,7 @@
 #include <QtQuick/QQuickItem>
 
 #include "private/riveinspector.h"
-#include "private/riverenderstate.h"
+#include "private/rendering/riverenderstate.h"
 
 class QHoverEvent;
 class QMouseEvent;
