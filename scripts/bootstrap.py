@@ -148,6 +148,19 @@ def gather_rive_dependencies(rive_cpp_dir: Path) -> list[dict[str, object]]:
 
 
 def apply_dependency_compatibility(target: Path, entry: dict[str, object]) -> None:
+  if entry["path"] == "3rdparty/rive-cpp":
+    gl_render_context = target / "renderer" / "src" / "gl" / "render_context_gl_impl.cpp"
+    if gl_render_context.exists():
+      text = gl_render_context.read_text(encoding="utf-8")
+      needle = """        case gpu::InterlockMode::atomics:\n            sources.push_back(gpu::glsl::draw_path_common);\n            sources.push_back(gpu::glsl::atomic_draw);\n            break;\n"""
+      replacement = """        case gpu::InterlockMode::atomics:\n            if (drawType == gpu::DrawType::imageMesh ||\n                drawType == gpu::DrawType::imageRect)\n            {\n                sources.push_back(glsl::image_draw_uniforms);\n            }\n            sources.push_back(gpu::glsl::draw_path_common);\n            sources.push_back(gpu::glsl::atomic_draw);\n            break;\n"""
+      if needle in text:
+        gl_render_context.write_text(
+          text.replace(needle, replacement),
+          encoding="utf-8",
+        )
+    return
+
   if entry["path"] == "3rdparty/luau":
     lua_header = target / "VM" / "include" / "lua.h"
     if lua_header.exists():
