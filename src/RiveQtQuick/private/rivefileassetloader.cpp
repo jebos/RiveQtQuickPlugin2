@@ -3,7 +3,7 @@
 #include <QFile>
 #include <QImage>
 
-#include "rivebackendbridge.h"
+#include "rendering/rivebackendbridge.h"
 
 #include "rive/assets/file_asset.hpp"
 #include "rive/assets/font_asset.hpp"

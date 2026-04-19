@@ -18,7 +18,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(RIVEQT_RELEASE_NAME "QtQuickRivePlugin2")
 
 if(APPLE)
-    enable_language(OBJCXX)
+    enable_language(OBJC OBJCXX)
 endif()
 
 option(RIVEQT_BUILD_EXAMPLES "Build example applications." ON)
@@ -76,6 +76,7 @@ if(RIVEQT_BUILD_EXAMPLES)
     add_subdirectory(examples/minimal)
     add_subdirectory(examples/interactive)
     add_subdirectory(examples/marketplace_demo)
+    add_subdirectory(examples/audio)
 endif()
 
 if(RIVEQT_BUILD_TESTS)

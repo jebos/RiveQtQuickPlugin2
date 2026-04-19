@@ -42,6 +42,12 @@ PREMAKE_DEPENDENCY_SPECS = [
     "check": "yoga/Yoga.h",
   },
   {
+    "premake": "dependencies/premake5_miniaudio_v2.lua",
+    "variable": "miniaudio",
+    "path": "3rdparty/miniaudio",
+    "check": "miniaudio.c",
+  },
+  {
     "premake": "scripting/premake5.lua",
     "variable": "luau",
     "path": "3rdparty/luau",

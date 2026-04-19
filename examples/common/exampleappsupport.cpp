@@ -157,6 +157,10 @@ void configureGraphicsApi()
 #endif
 }
 
+#if !defined(Q_OS_IOS)
+void configureAudioPlaybackSession() {}
+#endif
+
 void configureEngine(QQmlApplicationEngine& engine)
 {
 #if defined(Q_OS_IOS)

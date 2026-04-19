@@ -4,7 +4,7 @@
 
 #include <QSet>
 
-#include "../rivelogging.h"
+#include "rivelogging.h"
 #include "qpainterriveshader.h"
 
 #include "rive/shapes/paint/color.hpp"
