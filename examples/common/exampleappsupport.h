@@ -8,6 +8,7 @@ class QQmlApplicationEngine;
 namespace RiveQtExampleSupport {
 
 void configureGraphicsApi();
+void configureAudioPlaybackSession();
 void configureEngine(QQmlApplicationEngine& engine);
 QString assetPath(const QString& relativePath);
 QUrl assetUrl(const QString& relativePath);

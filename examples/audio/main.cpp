@@ -10,6 +10,7 @@ int main(int argc, char* argv[])
 {
     RiveQtExampleSupport::configureGraphicsApi();
     QGuiApplication app(argc, argv);
+    RiveQtExampleSupport::configureAudioPlaybackSession();
     qml_register_types_RiveQtQuick();
 
     const QUrl assetUrl = RiveQtExampleSupport::assetUrl(

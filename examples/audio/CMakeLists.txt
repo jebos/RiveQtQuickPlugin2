@@ -3,6 +3,18 @@ qt_add_executable(riveqtquick_audio
     "${CMAKE_SOURCE_DIR}/examples/common/exampleappsupport.cpp"
 )
 
+if(IOS)
+    target_sources(riveqtquick_audio
+        PRIVATE
+            "${CMAKE_SOURCE_DIR}/examples/common/exampleappsupport_ios.mm"
+    )
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/examples/common/exampleappsupport_ios.mm"
+        PROPERTIES
+            COMPILE_OPTIONS "-fobjc-arc"
+    )
+endif()
+
 riveqt_set_runtime_output_directory(riveqtquick_audio "apps")
 
 target_link_libraries(riveqtquick_audio
