@@ -26,14 +26,14 @@ void QPainterRivePath::fillRule(rive::FillRule value)
   m_path.setFillRule(toQtFillRule(value));
 }
 
-void QPainterRivePath::addRenderPath(rive::RenderPath* path,
+void QPainterRivePath::addRenderPath(const rive::RenderPath* path,
   const rive::Mat2D& transform)
 {
   if (!path) {
     return;
   }
 
-  auto* qpPath = static_cast<QPainterRivePath*>(path);
+  auto* qpPath = static_cast<const QPainterRivePath*>(path);
   m_path.addPath(toQTransform(transform).map(qpPath->path()));
 }
 

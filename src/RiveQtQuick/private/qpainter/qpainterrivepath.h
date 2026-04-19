@@ -15,7 +15,7 @@ class QPainterRivePath final : public rive::RenderPath {
 
   void rewind() override;
   void fillRule(rive::FillRule value) override;
-  void addRenderPath(rive::RenderPath* path,
+  void addRenderPath(const rive::RenderPath* path,
     const rive::Mat2D& transform) override;
   void moveTo(float x,
     float y) override;
