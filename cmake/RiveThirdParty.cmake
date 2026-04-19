@@ -244,6 +244,12 @@ target_include_directories(rive_miniaudio
         "${RIVE_MINIAUDIO_DIR}"
         "${RIVE_CPP_DIR}/dependencies"
 )
+if(IOS)
+    target_link_libraries(rive_miniaudio
+        PUBLIC
+            "-framework AVFAudio"
+    )
+endif()
 
 add_library(rive_luau_common STATIC)
 file(GLOB RIVE_LUAU_COMMON_SOURCES CONFIGURE_DEPENDS
