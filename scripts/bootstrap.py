@@ -83,6 +83,15 @@ PIP_SOURCES = [
 PREMAKE_GITHUB_PATTERN = re.compile(
   r"(?P<variable>[A-Za-z0-9_]+)\s*=\s*dependency\.github\(\s*['\"](?P<repo>[^'\"]+)['\"]\s*,\s*['\"](?P<ref>[^'\"]+)['\"]\s*\)"
 )
+MAKE_IMAGE_TEXTURE_DECL_PATTERN = re.compile(
+  r"(?P<indent>[ \t]*)(?:virtual\s+)?rcp<Texture>\s+makeImageTexture\(\s*"
+  r"uint32_t\s+width,\s*"
+  r"uint32_t\s+height,\s*"
+  r"uint32_t\s+mipLevelCount,\s*"
+  r"GPUTextureFormat\s+format,\s*"
+  r"const\s+uint8_t\s+imageDataRGBAPremul\[\]\)\s*(?:override)?;",
+  re.MULTILINE,
+)
 
 
 def run(command: list[str], cwd: Path | None = None) -> None:
@@ -153,8 +162,90 @@ def gather_rive_dependencies(rive_cpp_dir: Path) -> list[dict[str, object]]:
   return entries
 
 
+def add_make_image_texture_compat(header: Path) -> None:
+  if not header.exists():
+    return
+
+  text = header.read_text(encoding="utf-8")
+  if "GPUTextureFormat format" not in text or "GPUTextureFormat::rgba32" in text:
+    return
+
+  match = MAKE_IMAGE_TEXTURE_DECL_PATTERN.search(text)
+  if not match:
+    return
+
+  indent = match.group("indent")
+  continuation = indent + " " * 34
+  compatibility_overload = (
+    f"\n{indent}rcp<Texture> makeImageTexture(uint32_t width,\n"
+    f"{continuation}uint32_t height,\n"
+    f"{continuation}uint32_t mipLevelCount,\n"
+    f"{continuation}const uint8_t imageDataRGBAPremul[])\n"
+    f"{indent}{{\n"
+    f"{indent}    return makeImageTexture(width,\n"
+    f"{indent}                            height,\n"
+    f"{indent}                            mipLevelCount,\n"
+    f"{indent}                            GPUTextureFormat::rgba32,\n"
+    f"{indent}                            imageDataRGBAPremul);\n"
+    f"{indent}}}\n"
+  )
+
+  header.write_text(
+    text[:match.end()] + compatibility_overload + text[match.end():],
+    encoding="utf-8",
+  )
+
+
 def apply_dependency_compatibility(target: Path, entry: dict[str, object]) -> None:
   if entry["path"] == "3rdparty/rive-cpp":
+    render_context_impl_header = (
+      target
+      / "renderer"
+      / "include"
+      / "rive"
+      / "renderer"
+      / "render_context_impl.hpp"
+    )
+    if render_context_impl_header.exists():
+      text = render_context_impl_header.read_text(encoding="utf-8")
+      include = '#include "rive/renderer/texture.hpp"\n'
+      needle = '#include "rive/texture_archive.hpp"\n'
+      if include not in text and needle in text:
+        render_context_impl_header.write_text(
+          text.replace(needle, needle + include),
+          encoding="utf-8",
+        )
+
+    gl_render_context_header = (
+      target
+      / "renderer"
+      / "include"
+      / "rive"
+      / "renderer"
+      / "gl"
+      / "render_context_gl_impl.hpp"
+    )
+    if gl_render_context_header.exists():
+      text = gl_render_context_header.read_text(encoding="utf-8")
+      include = '#include "rive/renderer/texture.hpp"\n'
+      needle = '#include "rive/renderer/render_context_helper_impl.hpp"\n'
+      if include not in text and needle in text:
+        gl_render_context_header.write_text(
+          text.replace(needle, needle + include),
+          encoding="utf-8",
+        )
+
+    renderer_include_dir = target / "renderer" / "include" / "rive" / "renderer"
+    for header in [
+      renderer_include_dir / "d3d11" / "render_context_d3d_impl.hpp",
+      renderer_include_dir / "d3d12" / "render_context_d3d12_impl.hpp",
+      renderer_include_dir / "gl" / "render_context_gl_impl.hpp",
+      renderer_include_dir / "metal" / "render_context_metal_impl.h",
+      renderer_include_dir / "vulkan" / "render_context_vulkan_impl.hpp",
+      renderer_include_dir / "webgpu" / "render_context_webgpu_impl.hpp",
+    ]:
+      add_make_image_texture_compat(header)
+
     gl_render_context = target / "renderer" / "src" / "gl" / "render_context_gl_impl.cpp"
     if gl_render_context.exists():
       text = gl_render_context.read_text(encoding="utf-8")

@@ -14,11 +14,17 @@ SPIRV_FIXEDCOLOR_FRAG_INPUTS = [
     "draw_clockwise_path.main",
     "draw_clockwise_clip.main",
     "draw_clockwise_interior_triangles.main",
-    "draw_clockwise_interior_triangles_clip.main",
+    "draw_clockwise_clip_interior_triangles.main",
     "draw_clockwise_atlas_blit.main",
     "draw_clockwise_image_mesh.main",
+    "draw_clockwise_atomic_path.main",
+    "draw_clockwise_atomic_interior_triangles.main",
     "draw_clockwise_atomic_atlas_blit.main",
     "draw_clockwise_atomic_image_mesh.main",
+    "init_clockwise_atomic_workaround.frag",
+    "draw_clockwise_atomic_clip.frag",
+    "draw_clockwise_atomic_clip_interior_triangles.frag",
+    "clear_clockwise_atomic_clip.main",
     "draw_msaa_atlas_blit.main",
     "draw_msaa_image_mesh.main",
     "draw_msaa_path.main",
@@ -210,7 +216,7 @@ def spirv_symbol_name(input_path: Path, output_type: str) -> str:
 
 
 def is_atomic_input(input_path: Path) -> bool:
-    return "atomic" in input_path.stem and "clockwise_atomic" not in input_path.stem
+    return "atomic" in input_path.stem
 
 
 def is_clockwise_input(input_path: Path) -> bool:
@@ -243,6 +249,44 @@ def spirv_opt_params(input_path: Path, output_type: str) -> list[str]:
     return SPIRV_STANDARD_FRAG_OPT_PARAMS
 
 
+def makefile_input_list(source_dir: Path,
+                        variable: str,
+                        fallback: list[str]) -> list[str]:
+    makefile = source_dir / "Makefile"
+    if not makefile.exists():
+        return fallback
+
+    lines = makefile.read_text(encoding="utf-8").splitlines()
+    prefix = f"{variable} :="
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith(prefix):
+            continue
+
+        values: list[str] = []
+        remainder = stripped.split(":=", 1)[1].strip()
+        while True:
+            continued = remainder.endswith("\\")
+            value_text = remainder[:-1].strip() if continued else remainder
+            values.extend(value for value in value_text.split() if value)
+
+            if not continued:
+                break
+            index += 1
+            if index >= len(lines):
+                break
+            remainder = lines[index].strip()
+
+        normalized = [
+            value.removeprefix("spirv/")
+            for value in values
+            if not value.startswith("#")
+        ]
+        return normalized or fallback
+
+    return fallback
+
+
 def compile_spirv(source_dir: Path,
                   out_dir: Path,
                   glslang_validator: Path,
@@ -254,6 +298,16 @@ def compile_spirv(source_dir: Path,
     standard_inputs = sorted(spirv_dir.glob("*.main"))
     standard_inputs += sorted(spirv_dir.glob("*.vert"))
     standard_inputs += sorted(spirv_dir.glob("*.frag"))
+    fixedcolor_frag_inputs = makefile_input_list(
+        source_dir,
+        "SPIRV_FIXEDCOLOR_FRAG_INPUTS",
+        SPIRV_FIXEDCOLOR_FRAG_INPUTS,
+    )
+    draw_msaa_inputs = makefile_input_list(
+        source_dir,
+        "SPIRV_DRAW_MSAA_INPUTS",
+        SPIRV_DRAW_MSAA_INPUTS,
+    )
 
     def compile_variants(input_paths: list[Path], output_types: list[str]) -> None:
         for output_type in output_types:
@@ -303,11 +357,11 @@ def compile_spirv(source_dir: Path,
 
     compile_variants(standard_inputs, ["vert", "frag"])
     compile_variants(
-        [spirv_dir / name for name in SPIRV_FIXEDCOLOR_FRAG_INPUTS],
+        [spirv_dir / name for name in fixedcolor_frag_inputs],
         ["fixedcolor_frag"],
     )
     compile_variants(
-        [spirv_dir / name for name in SPIRV_DRAW_MSAA_INPUTS],
+        [spirv_dir / name for name in draw_msaa_inputs],
         ["noclipdistance_vert"],
     )
 
