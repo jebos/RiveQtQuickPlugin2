@@ -32,12 +32,10 @@ RiveItem {
 - Direct3D 11 on Windows
 - Direct3D 12 when available in the bundled Rive runtime
 - OpenGL 4.2+ on Windows and Linux through Qt Quick's graphics API switch
+- OpenGL ES 3.0+ on Linux EGL/EGLFS targets through the same Qt Quick OpenGL graphics API switch (experimental)
 - Vulkan when available in the bundled Rive runtime
 - Metal on macOS and iOS
 - Software rendering through QPainter in a best effort approach (its slower than Hardware and visual losses) 
-
-### Not supported
-- OpenGL ES
 
 ### Known software limitations of software rendering
 
@@ -92,12 +90,14 @@ The top-level CMake project exposes a few useful switches:
 - `RIVEQT_BUILD_EXAMPLES=ON|OFF` builds the example applications
 - `RIVEQT_BUILD_TESTS=ON|OFF` builds the unit and QML tests
 - `RIVEQT_ENABLE_OPENGL=ON|OFF` enables the desktop OpenGL backend on Windows/Linux
+- `RIVEQT_ENABLE_OPENGL_ES=ON|OFF` retargets the OpenGL backend to EGL / OpenGL ES 3 on Linux
 - `RIVEQT_ENABLE_METAL=ON|OFF` enables the Metal backend on Apple platforms
 - `RIVEQT_ENABLE_SOFTWARE=ON|OFF` enables the desktop QPainter software backend
 - `RIVEQT_IOS_BUNDLE_ID_PREFIX=<prefix>` sets the generated iOS example app bundle identifiers
 - `RIVEQT_IOS_DEVELOPMENT_TEAM=<team-id>` sets an explicit Apple development team for iOS signing
 
 `RIVEQT_ENABLE_OPENGL` defaults to `ON` on Windows/Linux and `OFF` on Apple platforms.
+`RIVEQT_ENABLE_OPENGL_ES` defaults to `OFF` and requires `RIVEQT_ENABLE_OPENGL=ON`.
 `RIVEQT_ENABLE_METAL` defaults to `ON` on Apple platforms and `OFF` elsewhere.
 `RIVEQT_ENABLE_SOFTWARE` defaults to `ON` on desktop builds and `OFF` on mobile
 platforms.
@@ -110,6 +110,10 @@ QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 ```
 
 The desktop OpenGL backend requires an actual OpenGL `4.2+` core context.
+
+For EGLFS / OpenGL ES builds, still request Qt Quick's `OpenGL` graphics API,
+but configure the build with `RIVEQT_ENABLE_OPENGL_ES=ON` so the plugin expects
+an OpenGL ES `3.0+` context instead of desktop OpenGL.
 
 For the software backend:
 

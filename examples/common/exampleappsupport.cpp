@@ -144,9 +144,14 @@ void configureGraphicsApi()
         {
 #if defined(Q_OS_WIN) || defined(Q_OS_LINUX)
             QSurfaceFormat format;
+#if defined(RIVEQT_ENABLE_OPENGL_ES)
+            format.setRenderableType(QSurfaceFormat::OpenGLES);
+            format.setVersion(3, 0);
+#else
             format.setRenderableType(QSurfaceFormat::OpenGL);
             format.setProfile(QSurfaceFormat::CoreProfile);
             format.setVersion(4, 2);
+#endif
             format.setDepthBufferSize(24);
             format.setStencilBufferSize(8);
             QSurfaceFormat::setDefaultFormat(format);

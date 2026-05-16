@@ -80,6 +80,12 @@ PIP_SOURCES = [
   },
 ]
 
+DEPENDENCY_PATCH_SPECS = {
+  RIVE_RUNTIME_PATH: [
+    "patches/rive-runtime-eglfs.patch",
+  ],
+}
+
 PREMAKE_GITHUB_PATTERN = re.compile(
   r"(?P<variable>[A-Za-z0-9_]+)\s*=\s*dependency\.github\(\s*['\"](?P<repo>[^'\"]+)['\"]\s*,\s*['\"](?P<ref>[^'\"]+)['\"]\s*\)"
 )
@@ -172,14 +178,65 @@ def patch_rive_runtime_includes(target: Path) -> None:
     header.write_text(text.replace(anchor, anchor + include, 1), encoding="utf-8")
 
 
+def apply_dependency_patch(target: Path, patch_rel_path: str) -> None:
+  patch_path = ROOT / patch_rel_path
+  if not patch_path.exists():
+    raise RuntimeError(f"Missing dependency patch: {patch_path}")
+
+  if patch_path.name == "rive-runtime-eglfs.patch":
+    gles3_header = target / "renderer" / "include" / "rive" / "renderer" / "gl" / "gles3.hpp"
+    gles_loader = target / "renderer" / "src" / "gl" / "load_gles_extensions.cpp"
+    if gles3_header.exists() and gles_loader.exists():
+      gles3_text = gles3_header.read_text(encoding="utf-8")
+      gles_loader_text = gles_loader.read_text(encoding="utf-8")
+      if ("#ifdef RIVE_GLES_EGL" in gles3_text and
+          "#if defined(RIVE_GLES_EGL)" in gles_loader_text and
+          "glDrawArraysInstancedBaseInstanceEXT = nullptr;" not in gles_loader_text):
+        print(f"skip {patch_path.name} (already applied)")
+        return
+
+  apply_check = subprocess.run(
+    ["git", "apply", "--check", str(patch_path)],
+    cwd=target,
+    capture_output=True,
+    text=True,
+  )
+  if apply_check.returncode == 0:
+    run(["git", "apply", str(patch_path)], cwd=target)
+    print(f"patched {target} with {patch_path.name}")
+    return
+
+  reverse_check = subprocess.run(
+    ["git", "apply", "--reverse", "--check", str(patch_path)],
+    cwd=target,
+    capture_output=True,
+    text=True,
+  )
+  if reverse_check.returncode == 0:
+    print(f"skip {patch_path.name} (already applied)")
+    return
+
+  patch_output = apply_check.stderr.strip() or apply_check.stdout.strip()
+  raise RuntimeError(
+    f"Failed to apply dependency patch {patch_path} in {target}:\n{patch_output}"
+  )
+
+
+def apply_dependency_patches(target: Path, entry: dict[str, object]) -> None:
+  for patch_rel_path in DEPENDENCY_PATCH_SPECS.get(str(entry["path"]), []):
+    apply_dependency_patch(target, patch_rel_path)
+
+
 def ensure_git_dependency(entry: dict[str, object], refresh: bool) -> None:
   target = ROOT / str(entry["path"])
   name = str(entry["path"])
   if target.exists() and refresh:
     shutil.rmtree(target)
 
-  if target.exists() and entry["path"] == RIVE_RUNTIME_PATH:
-    patch_rive_runtime_includes(target)
+  if target.exists():
+    if entry["path"] == RIVE_RUNTIME_PATH:
+      patch_rive_runtime_includes(target)
+    apply_dependency_patches(target, entry)
 
   if target.exists() and dependency_ready(target, entry):
     print(f"skip {name} (already present)")
@@ -240,6 +297,7 @@ def ensure_git_dependency(entry: dict[str, object], refresh: bool) -> None:
     )
   if entry["path"] == RIVE_RUNTIME_PATH:
     patch_rive_runtime_includes(target)
+  apply_dependency_patches(target, entry)
   if not dependency_ready(target, entry):
     raise RuntimeError(f"bootstrap copied {name}, but the expected files are still missing")
   print(f"ready {name}")

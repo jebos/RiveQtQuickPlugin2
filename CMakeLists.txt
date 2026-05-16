@@ -36,10 +36,23 @@ if(WIN32 OR (UNIX AND NOT APPLE AND NOT ANDROID))
     set(RIVEQT_ENABLE_OPENGL_DEFAULT ON)
 endif()
 option(RIVEQT_ENABLE_OPENGL "Build desktop OpenGL backend support." ${RIVEQT_ENABLE_OPENGL_DEFAULT})
+option(RIVEQT_ENABLE_OPENGL_ES "Build the OpenGL backend against OpenGL ES/EGL instead of desktop OpenGL." OFF)
+if(RIVEQT_ENABLE_OPENGL_ES AND NOT RIVEQT_ENABLE_OPENGL)
+    message(FATAL_ERROR "RIVEQT_ENABLE_OPENGL_ES requires RIVEQT_ENABLE_OPENGL=ON.")
+endif()
 if(APPLE AND RIVEQT_ENABLE_OPENGL)
     message(FATAL_ERROR
         "Desktop OpenGL backend support requires OpenGL 4.2+ and is unsupported on Apple platforms. Use Metal instead.")
 endif()
+if(RIVEQT_ENABLE_OPENGL_ES AND WIN32)
+    message(FATAL_ERROR
+        "RIVEQT_ENABLE_OPENGL_ES is intended for EGL-based Linux targets and is unsupported on Windows.")
+endif()
+if(RIVEQT_ENABLE_OPENGL_ES AND APPLE)
+    message(FATAL_ERROR
+        "RIVEQT_ENABLE_OPENGL_ES is unsupported on Apple platforms.")
+endif()
+add_compile_definitions($<$<BOOL:${RIVEQT_ENABLE_OPENGL_ES}>:RIVEQT_ENABLE_OPENGL_ES>)
 
 set(RIVEQT_ENABLE_METAL_DEFAULT OFF)
 if(APPLE)
@@ -55,7 +68,11 @@ option(RIVEQT_ENABLE_SOFTWARE "Build QPainter software backend support." ${RIVEQ
 
 find_package(Qt6 6.6.0 REQUIRED COMPONENTS Concurrent Core Gui Network Qml Quick QuickControls2 Test QuickTest)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-find_package(Qt6GuiPrivate 6.6.0 REQUIRED)
+find_package(Qt6GuiPrivate 6.6.0 QUIET)
+if(NOT TARGET Qt6::GuiPrivate)
+    message(FATAL_ERROR
+        "Qt6::GuiPrivate is required but was not provided by the active Qt installation.")
+endif()
 
 qt_standard_project_setup(REQUIRES 6.6.0)
 
