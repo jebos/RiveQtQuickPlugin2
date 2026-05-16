@@ -38,7 +38,7 @@ GLADapiproc loadGladSymbol(const char* name)
     resolveQtOpenGLProcAddress(g_gladLoaderContext, name));
 }
 
-bool isDesktopOpenGL42OrNewer(void* contextHandle)
+bool isOpenGLContextSupported(void* contextHandle)
 {
   const QtOpenGLContextInfo contextInfo = queryQtOpenGLContextInfo(contextHandle);
   if (!contextInfo.valid) {
@@ -47,6 +47,21 @@ bool isDesktopOpenGL42OrNewer(void* contextHandle)
     return false;
   }
 
+#if defined(RIVEQT_ENABLE_OPENGL_ES)
+  if (!contextInfo.isOpenGLES) {
+    qCWarning(lcRiveGL).nospace()
+      << "OpenGL ES backend requires an OpenGL ES 3.0+ context, but Qt created desktop OpenGL "
+      << contextInfo.majorVersion << '.' << contextInfo.minorVersion << '.';
+    return false;
+  }
+
+  if (contextInfo.majorVersion < 3) {
+    qCWarning(lcRiveGL).nospace()
+      << "OpenGL ES backend requires OpenGL ES 3.0+, but Qt created OpenGL ES "
+      << contextInfo.majorVersion << '.' << contextInfo.minorVersion << '.';
+    return false;
+  }
+#else
   if (contextInfo.isOpenGLES) {
     qCWarning(lcRiveGL).nospace()
       << "Desktop OpenGL backend requires a desktop OpenGL 4.2+ core context, "
@@ -62,6 +77,7 @@ bool isDesktopOpenGL42OrNewer(void* contextHandle)
       << contextInfo.majorVersion << '.' << contextInfo.minorVersion << '.';
     return false;
   }
+#endif
 
   return true;
 }
@@ -272,7 +288,7 @@ bool RiveGLBridge::ensureContext(QQuickWindow* window)
     return false;
   }
 
-  if (!isDesktopOpenGL42OrNewer(loaderContext)) {
+  if (!isOpenGLContextSupported(loaderContext)) {
     return false;
   }
 
