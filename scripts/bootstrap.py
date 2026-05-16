@@ -209,12 +209,16 @@ def apply_dependency_compatibility(target: Path, entry: dict[str, object]) -> No
     if render_context_impl_header.exists():
       text = render_context_impl_header.read_text(encoding="utf-8")
       include = '#include "rive/renderer/texture.hpp"\n'
-      needle = '#include "rive/texture_archive.hpp"\n'
-      if include not in text and needle in text:
-        render_context_impl_header.write_text(
-          text.replace(needle, needle + include),
-          encoding="utf-8",
-        )
+      for needle in (
+        '#include "rive/texture_archive.hpp"\n',
+        '#include "rive/gpu_texture_format.hpp"\n',
+      ):
+        if include not in text and needle in text:
+          render_context_impl_header.write_text(
+            text.replace(needle, include + needle),
+            encoding="utf-8",
+          )
+          break
 
     gl_render_context_header = (
       target
