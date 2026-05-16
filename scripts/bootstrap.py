@@ -83,15 +83,16 @@ PIP_SOURCES = [
 DEPENDENCY_PATCH_SPECS = {
   RIVE_RUNTIME_PATH: [
     "patches/rive-runtime-eglfs.patch",
+    "patches/rive-runtime-gl-atomic-image-uniforms.patch",
   ],
 }
 
 PREMAKE_GITHUB_PATTERN = re.compile(
   r"(?P<variable>[A-Za-z0-9_]+)\s*=\s*dependency\.github\(\s*['\"](?P<repo>[^'\"]+)['\"]\s*,\s*['\"](?P<ref>[^'\"]+)['\"]\s*\)"
 )
-def run(command: list[str], cwd: Path | None = None) -> None:
+def run(command: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(command))
-    subprocess.run(command, cwd=cwd or ROOT, check=True)
+    subprocess.run(command, cwd=cwd or ROOT, env=env, check=True)
 
 
 def dependency_ready(target: Path, entry: dict[str, object]) -> bool:
@@ -161,6 +162,8 @@ def apply_dependency_patch(target: Path, patch_rel_path: str) -> None:
   patch_path = ROOT / patch_rel_path
   if not patch_path.exists():
     raise RuntimeError(f"Missing dependency patch: {patch_path}")
+  patch_env = os.environ.copy()
+  patch_env["GIT_CEILING_DIRECTORIES"] = str(target.parent)
 
   if patch_path.name == "rive-runtime-eglfs.patch":
     gles3_header = target / "renderer" / "include" / "rive" / "renderer" / "gl" / "gles3.hpp"
@@ -175,19 +178,39 @@ def apply_dependency_patch(target: Path, patch_rel_path: str) -> None:
         return
 
   apply_check = subprocess.run(
-    ["git", "apply", "--check", str(patch_path)],
+    [
+      "git",
+      "apply",
+      "--check",
+      "--ignore-space-change",
+      str(patch_path),
+    ],
     cwd=target,
+    env=patch_env,
     capture_output=True,
     text=True,
   )
   if apply_check.returncode == 0:
-    run(["git", "apply", str(patch_path)], cwd=target)
+    run([
+      "git",
+      "apply",
+      "--ignore-space-change",
+      str(patch_path),
+    ], cwd=target, env=patch_env)
     print(f"patched {target} with {patch_path.name}")
     return
 
   reverse_check = subprocess.run(
-    ["git", "apply", "--reverse", "--check", str(patch_path)],
+    [
+      "git",
+      "apply",
+      "--reverse",
+      "--check",
+      "--ignore-space-change",
+      str(patch_path),
+    ],
     cwd=target,
+    env=patch_env,
     capture_output=True,
     text=True,
   )

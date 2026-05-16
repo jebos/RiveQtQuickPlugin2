@@ -1,0 +1,14 @@
+diff --git a/renderer/src/gl/render_context_gl_impl.cpp b/renderer/src/gl/render_context_gl_impl.cpp
+--- a/renderer/src/gl/render_context_gl_impl.cpp
++++ b/renderer/src/gl/render_context_gl_impl.cpp
+@@ -1398,9 +1398,5 @@ RenderContextGLImpl::DrawShader::DrawShader(
+         case gpu::InterlockMode::atomics:
+-            if (drawType == gpu::DrawType::imageMesh ||
+-                drawType == gpu::DrawType::imageRect)
+-            {
+-                sources.push_back(glsl::image_draw_uniforms);
+-            }
++            sources.push_back(glsl::image_draw_uniforms);
+             sources.push_back(gpu::glsl::draw_path_common);
+             sources.push_back(gpu::glsl::atomic_draw);
+             break;
