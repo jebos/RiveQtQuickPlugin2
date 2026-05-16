@@ -212,15 +212,9 @@ diff --git a/renderer/src/gl/render_context_gl_impl.cpp b/renderer/src/gl/render
              // ANGLE_shader_pixel_local_storage can just resolve and output the
              // render pass at the end of the PLS render pass.
              assert(m_atlasRenderTexture != 0);
-@@ -1396,6 +1396,11 @@
-             break;
- 
+@@ -1398,4 +1398,5 @@
          case gpu::InterlockMode::atomics:
-+            if (drawType == gpu::DrawType::imageMesh ||
-+                drawType == gpu::DrawType::imageRect)
-+            {
-+                sources.push_back(glsl::image_draw_uniforms);
-+            }
++            sources.push_back(glsl::image_draw_uniforms);
              sources.push_back(gpu::glsl::draw_path_common);
              sources.push_back(gpu::glsl::atomic_draw);
              break;
