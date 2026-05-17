@@ -14,7 +14,6 @@
 #include "rive/renderer/rive_render_image.hpp"
 #include "rive/renderer/rive_renderer.hpp"
 #include "rive/scene.hpp"
-#include "riveimagetexture.h"
 #include "rivelogging.h"
 
 using Microsoft::WRL::ComPtr;
@@ -173,12 +172,10 @@ rive::rcp<rive::RenderImage> RiveD3D12Bridge::createRenderImage(
     const QImage rgba = image.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
     auto* impl =
         m_sharedContext->renderContext->static_impl_cast<rive::gpu::RenderContextD3D12Impl>();
-    auto texture = riveqt::rendering::makeRiveImageTexture(
-        impl,
-        static_cast<uint32_t>(rgba.width()),
-        static_cast<uint32_t>(rgba.height()),
-        1,
-        rgba.constBits());
+    auto texture = impl->makeImageTexture(static_cast<uint32_t>(rgba.width()),
+                                          static_cast<uint32_t>(rgba.height()),
+                                          1,
+                                          rgba.constBits());
     return rive::make_rcp<rive::RiveRenderImage>(texture);
 }
 

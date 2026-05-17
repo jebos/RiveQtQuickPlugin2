@@ -16,7 +16,6 @@
 #include "rive/renderer/vulkan/render_context_vulkan_impl.hpp"
 #include "rive/renderer/vulkan/render_target_vulkan.hpp"
 #include "rive/scene.hpp"
-#include "riveimagetexture.h"
 #include "rivelogging.h"
 
 namespace
@@ -180,12 +179,10 @@ rive::rcp<rive::RenderImage> RiveVulkanBridge::createRenderImage(
     const QImage rgba = image.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
     auto* impl =
         m_sharedContext->renderContext->static_impl_cast<rive::gpu::RenderContextVulkanImpl>();
-    auto texture = riveqt::rendering::makeRiveImageTexture(
-        impl,
-        static_cast<uint32_t>(rgba.width()),
-        static_cast<uint32_t>(rgba.height()),
-        1,
-        rgba.constBits());
+    auto texture = impl->makeImageTexture(static_cast<uint32_t>(rgba.width()),
+                                          static_cast<uint32_t>(rgba.height()),
+                                          1,
+                                          rgba.constBits());
     return rive::make_rcp<rive::RiveRenderImage>(texture);
 }
 
