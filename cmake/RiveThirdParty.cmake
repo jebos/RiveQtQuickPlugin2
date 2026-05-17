@@ -92,10 +92,8 @@ if(NOT EXISTS "${RIVE_LUAU_DIR}/VM/include/lua.h")
     message(FATAL_ERROR "Missing vendored Luau checkout in ${RIVE_LUAU_DIR}.")
 endif()
 set(RIVE_LIBHYDROGEN_SOURCE "${RIVE_LIBHYDROGEN_DIR}/libhydrogen.c")
-if(NOT EXISTS "${RIVE_LIBHYDROGEN_SOURCE}")
-    set(RIVE_LIBHYDROGEN_SOURCE "${RIVE_LIBHYDROGEN_DIR}/hydrogen.c")
-endif()
-if(NOT EXISTS "${RIVE_LIBHYDROGEN_SOURCE}")
+if(NOT EXISTS "${RIVE_LIBHYDROGEN_SOURCE}" OR
+   NOT EXISTS "${RIVE_LIBHYDROGEN_DIR}/libhydrogen.h")
     message(FATAL_ERROR "Missing vendored libhydrogen checkout in ${RIVE_LIBHYDROGEN_DIR}.")
 endif()
 
