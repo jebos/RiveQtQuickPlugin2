@@ -224,7 +224,7 @@ def is_clockwise_input(input_path: Path) -> bool:
 
 
 def spirv_compile_defines(input_path: Path, output_type: str) -> list[str]:
-    defines = ["-DTARGET_VULKAN"]
+    defines = ["-DTARGET_VULKAN", "-DTARGET_SPIRV"]
     if spirv_stage(output_type) == "vert":
         defines.append("-DVERTEX")
     else:
