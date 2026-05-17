@@ -14,6 +14,7 @@
 #include "rive/renderer/rive_render_image.hpp"
 #include "rive/renderer/rive_renderer.hpp"
 #include "rive/scene.hpp"
+#include "riveimagetexture.h"
 #include "rivelogging.h"
 
 using Microsoft::WRL::ComPtr;

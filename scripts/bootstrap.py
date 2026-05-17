@@ -57,10 +57,7 @@ PREMAKE_DEPENDENCY_SPECS = [
     "premake": "scripting/premake5.lua",
     "variable": "libhydrogen",
     "path": "3rdparty/libhydrogen",
-    "check": [
-      "libhydrogen.c",
-      "hydrogen.c",
-    ],
+    "check": "libhydrogen.c",
   },
   {
     "premake": "renderer/premake5_pls_renderer.lua",
@@ -90,6 +87,8 @@ DEPENDENCY_PATCH_SPECS = {
 PREMAKE_GITHUB_PATTERN = re.compile(
   r"(?P<variable>[A-Za-z0-9_]+)\s*=\s*dependency\.github\(\s*['\"](?P<repo>[^'\"]+)['\"]\s*,\s*['\"](?P<ref>[^'\"]+)['\"]\s*\)"
 )
+
+
 def run(command: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(command))
     subprocess.run(command, cwd=cwd or ROOT, env=env, check=True)

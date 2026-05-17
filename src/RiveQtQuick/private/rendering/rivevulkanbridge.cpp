@@ -16,6 +16,7 @@
 #include "rive/renderer/vulkan/render_context_vulkan_impl.hpp"
 #include "rive/renderer/vulkan/render_target_vulkan.hpp"
 #include "rive/scene.hpp"
+#include "riveimagetexture.h"
 #include "rivelogging.h"
 
 namespace

@@ -20,6 +20,7 @@
 #include "rive/renderer/rive_render_image.hpp"
 #include "rive/renderer/rive_renderer.hpp"
 #include "rive/scene.hpp"
+#include "riveimagetexture.h"
 #include "rivelogging.h"
 
 struct RiveGLBridge::SharedContext {
@@ -191,7 +192,8 @@ rive::rcp<rive::RenderImage> RiveGLBridge::createRenderImage(
   const QImage rgba = image.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
   auto* impl =
     m_sharedContext->renderContext->static_impl_cast<rive::gpu::RenderContextGLImpl>();
-  auto texture = impl->makeImageTexture(
+  auto texture = riveqt::rendering::makeRiveImageTexture(
+    impl,
     static_cast<uint32_t>(rgba.width()),
     static_cast<uint32_t>(rgba.height()),
     1,
