@@ -16,7 +16,6 @@ set(RIVEQTQUICK_HEADERS
     private/rivefileassetloader.h
     private/riveinspector.h
     private/rendering/rivebackendbridge.h
-    private/rendering/riveimagetexture.h
     private/rendering/riverendernode.h
     private/rendering/riverenderstate.h
 )
