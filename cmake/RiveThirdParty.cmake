@@ -20,6 +20,8 @@ unset(RIVE_GLSLANG_VALIDATOR_EXECUTABLE CACHE)
 unset(RIVE_SPIRV_OPT_EXECUTABLE CACHE)
 unset(RIVEQT_VULKAN_INCLUDE_DIR CACHE)
 unset(RIVEQT_VULKAN_LIBRARY CACHE)
+unset(RIVEQT_EGL_LIBRARY CACHE)
+unset(RIVEQT_GLES_LIBRARY CACHE)
 
 set(RIVEQT_ENABLE_D3D12 OFF)
 if(WIN32)
@@ -64,6 +66,25 @@ if(RIVEQT_VULKAN_INCLUDE_DIR AND RIVEQT_VULKAN_LIBRARY AND
     set(RIVEQT_ENABLE_VULKAN ON)
 endif()
 
+if(RIVEQT_ENABLE_OPENGL_ES)
+    find_package(egl CONFIG QUIET)
+    find_package(opengl_system CONFIG QUIET)
+    find_library(RIVEQT_EGL_LIBRARY
+        NAMES EGL
+    )
+    find_library(RIVEQT_GLES_LIBRARY
+        NAMES GLESv3 GLESv2
+    )
+    if(NOT TARGET egl::egl AND NOT RIVEQT_EGL_LIBRARY)
+        message(FATAL_ERROR
+            "OpenGL ES build requires either an imported egl::egl target or an EGL library in the active toolchain/sysroot.")
+    endif()
+    if(NOT TARGET opengl::opengl AND NOT RIVEQT_GLES_LIBRARY)
+        message(FATAL_ERROR
+            "OpenGL ES build requires either an imported opengl::opengl target or a GLES library in the active toolchain/sysroot.")
+    endif()
+endif()
+
 if(NOT EXISTS "${RIVE_CPP_DIR}/include/rive/file.hpp")
     message(FATAL_ERROR "Missing vendored rive-cpp checkout in ${RIVE_CPP_DIR}.")
 endif()
@@ -71,10 +92,8 @@ if(NOT EXISTS "${RIVE_LUAU_DIR}/VM/include/lua.h")
     message(FATAL_ERROR "Missing vendored Luau checkout in ${RIVE_LUAU_DIR}.")
 endif()
 set(RIVE_LIBHYDROGEN_SOURCE "${RIVE_LIBHYDROGEN_DIR}/libhydrogen.c")
-if(NOT EXISTS "${RIVE_LIBHYDROGEN_SOURCE}")
-    set(RIVE_LIBHYDROGEN_SOURCE "${RIVE_LIBHYDROGEN_DIR}/hydrogen.c")
-endif()
-if(NOT EXISTS "${RIVE_LIBHYDROGEN_SOURCE}")
+if(NOT EXISTS "${RIVE_LIBHYDROGEN_SOURCE}" OR
+   NOT EXISTS "${RIVE_LIBHYDROGEN_DIR}/libhydrogen.h")
     message(FATAL_ERROR "Missing vendored libhydrogen checkout in ${RIVE_LIBHYDROGEN_DIR}.")
 endif()
 
@@ -369,7 +388,9 @@ if(NOT APPLE OR NOT RIVEQT_ENABLE_METAL)
     list(FILTER RIVE_RENDERER_OBJCXX_SOURCES EXCLUDE REGEX "/metal/")
 endif()
 
-list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/gl/load_gles_extensions\\.cpp$")
+if(NOT RIVEQT_ENABLE_OPENGL_ES)
+    list(FILTER RIVE_RENDERER_SOURCES EXCLUDE REGEX "/gl/load_gles_extensions\\.cpp$")
+endif()
 
 target_sources(rive_official
     PRIVATE
@@ -414,7 +435,8 @@ target_compile_definitions(rive_official
         WITH_RIVE_AUDIO
         _RIVE_INTERNAL_
         YOGA_EXPORT=
-        $<$<BOOL:${RIVEQT_ENABLE_OPENGL}>:RIVE_DESKTOP_GL>
+        $<$<AND:$<BOOL:${RIVEQT_ENABLE_OPENGL}>,$<NOT:$<BOOL:${RIVEQT_ENABLE_OPENGL_ES}>>>:RIVE_DESKTOP_GL>
+        $<$<BOOL:${RIVEQT_ENABLE_OPENGL_ES}>:RIVE_GLES_EGL>
 )
 
 if(IOS)
@@ -436,6 +458,18 @@ endif()
 if(WIN32)
     target_compile_definitions(rive_official PUBLIC RIVE_WINDOWS _USE_MATH_DEFINES NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(rive_official PUBLIC d3d11 d3d12 dxgi dxguid d3dcompiler opengl32)
+endif()
+if(RIVEQT_ENABLE_OPENGL_ES)
+    if(TARGET egl::egl)
+        target_link_libraries(rive_official PUBLIC egl::egl)
+    else()
+        target_link_libraries(rive_official PUBLIC "${RIVEQT_EGL_LIBRARY}")
+    endif()
+    if(TARGET opengl::opengl)
+        target_link_libraries(rive_official PUBLIC opengl::opengl)
+    else()
+        target_link_libraries(rive_official PUBLIC "${RIVEQT_GLES_LIBRARY}")
+    endif()
 endif()
 
 if(RIVEQT_ENABLE_VULKAN)

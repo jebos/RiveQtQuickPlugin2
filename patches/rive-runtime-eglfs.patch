@@ -1,0 +1,291 @@
+diff --git a/renderer/include/rive/renderer/gl/gles3.hpp b/renderer/include/rive/renderer/gl/gles3.hpp
+--- a/renderer/include/rive/renderer/gl/gles3.hpp
++++ b/renderer/include/rive/renderer/gl/gles3.hpp
+@@ -15,6 +15,33 @@
+ #define glFramebufferFetchBarrierQCOM(...) RIVE_UNREACHABLE()
+ #define glFramebufferPixelLocalStorageSizeEXT(...) RIVE_UNREACHABLE()
+ #define glClearPixelLocalStorageuiEXT(...) RIVE_UNREACHABLE()
++#endif
++
++#ifdef RIVE_GLES_EGL
++#include "glad_custom.h"
++
++#ifndef GL_SHADER_PIXEL_LOCAL_STORAGE_EXT
++#define GL_SHADER_PIXEL_LOCAL_STORAGE_EXT 0x8F64
++#endif
++
++#ifndef GL_FRAMEBUFFER_FETCH_NONCOHERENT_QCOM
++#define GL_FRAMEBUFFER_FETCH_NONCOHERENT_QCOM 0x96A2
++#endif
++
++#ifndef PFNGLFRAMEBUFFERFETCHBARRIERQCOMPROC
++typedef void (GLAD_API_PTR *PFNGLFRAMEBUFFERFETCHBARRIERQCOMPROC)(void);
++#endif
++
++#ifndef PFNGLFRAMEBUFFERPIXELLOCALSTORAGESIZEEXTPROC
++typedef void (GLAD_API_PTR *PFNGLFRAMEBUFFERPIXELLOCALSTORAGESIZEEXTPROC)(GLuint target,
++                                                                           GLsizei size);
++#endif
++
++#ifndef PFNGLCLEARPIXELLOCALSTORAGEUIEXTPROC
++typedef void (GLAD_API_PTR *PFNGLCLEARPIXELLOCALSTORAGEUIEXTPROC)(GLsizei offset,
++                                                                  GLsizei n,
++                                                                  const GLuint* values);
++#endif
+ #endif
+ 
+ #ifdef RIVE_ANDROID
+@@ -112,7 +139,7 @@
+ 
+ #endif // RIVE_WEBGL
+ 
+-#if defined(RIVE_ANDROID) || defined(RIVE_WEBGL)
++#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL) || defined(RIVE_WEBGL)
+ // GLES 3.1 functionality is pulled in as an extension. Define these to avoid
+ // compile errors, even if we won't use them.
+ #define GL_SHADER_STORAGE_BUFFER 0x90D2
+@@ -211,7 +238,7 @@
+     bool QCOM_shader_framebuffer_fetch_noncoherent : 1;
+ };
+ 
+-#ifdef RIVE_ANDROID
++#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
+ // EXT_base_instance.
+ extern PFNGLDRAWARRAYSINSTANCEDBASEINSTANCEEXTPROC
+     glDrawArraysInstancedBaseInstanceEXT;
+diff --git a/renderer/include/rive/renderer/gl/render_context_gl_impl.hpp b/renderer/include/rive/renderer/gl/render_context_gl_impl.hpp
+--- a/renderer/include/rive/renderer/gl/render_context_gl_impl.hpp
++++ b/renderer/include/rive/renderer/gl/render_context_gl_impl.hpp
+@@ -8,6 +8,7 @@
+ #include "rive/renderer/gl/gl_state.hpp"
+ #include "rive/renderer/gl/gl_utils.hpp"
+ #include "rive/renderer/render_context_helper_impl.hpp"
++#include "rive/renderer/texture.hpp"
+ 
+ namespace rive
+ {
+diff --git a/renderer/src/gl/load_gles_extensions.cpp b/renderer/src/gl/load_gles_extensions.cpp
+--- a/renderer/src/gl/load_gles_extensions.cpp
++++ b/renderer/src/gl/load_gles_extensions.cpp
+@@ -4,25 +4,17 @@
+ 
+ #include "rive/renderer/gl/gles3.hpp"
+ 
++#if defined(RIVE_GLES_EGL)
++#include <glad/egl.h>
++#else
+ #include <EGL/egl.h>
++#endif
+ #include <assert.h>
+ 
+-PFNGLDRAWARRAYSINSTANCEDBASEINSTANCEEXTPROC
+-glDrawArraysInstancedBaseInstanceEXT = nullptr;
+-PFNGLDRAWELEMENTSINSTANCEDBASEINSTANCEEXTPROC
+-glDrawElementsInstancedBaseInstanceEXT = nullptr;
+-PFNGLDRAWELEMENTSINSTANCEDBASEVERTEXBASEINSTANCEEXTPROC
+-glDrawElementsInstancedBaseVertexBaseInstanceEXT = nullptr;
+ PFNGLFRAMEBUFFERFETCHBARRIERQCOMPROC glFramebufferFetchBarrierQCOM = nullptr;
+-PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC
+-glFramebufferTexture2DMultisampleEXT = nullptr;
+-PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC glRenderbufferStorageMultisampleEXT =
+-    nullptr;
+-PFNGLBLENDBARRIERKHRPROC glBlendBarrierKHR = nullptr;
+ PFNGLFRAMEBUFFERPIXELLOCALSTORAGESIZEEXTPROC
+ glFramebufferPixelLocalStorageSizeEXT = nullptr;
+ PFNGLCLEARPIXELLOCALSTORAGEUIEXTPROC glClearPixelLocalStorageuiEXT = nullptr;
+-PFNGLMAXSHADERCOMPILERTHREADSKHRPROC glMaxShaderCompilerThreadsKHR = nullptr;
+ 
+ void LoadAndValidateGLESExtensions(GLCapabilities* extensions)
+ {
+@@ -31,16 +23,6 @@
+     static GLCapabilities loadedExtensions{};
+     if (extensions->EXT_base_instance && !loadedExtensions.EXT_base_instance)
+     {
+-        glDrawArraysInstancedBaseInstanceEXT =
+-            (PFNGLDRAWARRAYSINSTANCEDBASEINSTANCEEXTPROC)eglGetProcAddress(
+-                "glDrawArraysInstancedBaseInstanceEXT");
+-        glDrawElementsInstancedBaseInstanceEXT =
+-            (PFNGLDRAWELEMENTSINSTANCEDBASEINSTANCEEXTPROC)eglGetProcAddress(
+-                "glDrawElementsInstancedBaseInstanceEXT");
+-        glDrawElementsInstancedBaseVertexBaseInstanceEXT =
+-            (PFNGLDRAWELEMENTSINSTANCEDBASEVERTEXBASEINSTANCEEXTPROC)
+-                eglGetProcAddress(
+-                    "glDrawElementsInstancedBaseVertexBaseInstanceEXT");
+         if (glDrawArraysInstancedBaseInstanceEXT != nullptr &&
+             glDrawElementsInstancedBaseInstanceEXT != nullptr &&
+             glDrawElementsInstancedBaseVertexBaseInstanceEXT != nullptr)
+@@ -70,12 +52,6 @@
+     if (extensions->EXT_multisampled_render_to_texture &&
+         !loadedExtensions.EXT_multisampled_render_to_texture)
+     {
+-        glFramebufferTexture2DMultisampleEXT =
+-            (PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC)eglGetProcAddress(
+-                "glFramebufferTexture2DMultisampleEXT");
+-        glRenderbufferStorageMultisampleEXT =
+-            (PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC)eglGetProcAddress(
+-                "glRenderbufferStorageMultisampleEXT");
+         if (glFramebufferTexture2DMultisampleEXT != nullptr &&
+             glRenderbufferStorageMultisampleEXT != nullptr)
+         {
+@@ -89,8 +65,6 @@
+     if (extensions->KHR_blend_equation_advanced &&
+         !loadedExtensions.KHR_blend_equation_advanced)
+     {
+-        glBlendBarrierKHR =
+-            (PFNGLBLENDBARRIERKHRPROC)eglGetProcAddress("glBlendBarrierKHR");
+         if (glBlendBarrierKHR != nullptr)
+         {
+             loadedExtensions.KHR_blend_equation_advanced = true;
+@@ -122,9 +96,6 @@
+     if (extensions->KHR_parallel_shader_compile &&
+         !loadedExtensions.KHR_parallel_shader_compile)
+     {
+-        glMaxShaderCompilerThreadsKHR =
+-            (PFNGLMAXSHADERCOMPILERTHREADSKHRPROC)eglGetProcAddress(
+-                "glMaxShaderCompilerThreadsKHR");
+         if (glMaxShaderCompilerThreadsKHR != nullptr)
+         {
+             loadedExtensions.KHR_parallel_shader_compile = true;
+diff --git a/renderer/src/gl/render_context_gl_impl.cpp b/renderer/src/gl/render_context_gl_impl.cpp
+--- a/renderer/src/gl/render_context_gl_impl.cpp
++++ b/renderer/src/gl/render_context_gl_impl.cpp
+@@ -110,7 +110,7 @@
+             }
+             [[fallthrough]];
+         case AtlasRenderType::r8PixelLocalStorageEXT:
+-#ifdef RIVE_ANDROID
++#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
+             if (capabilities.EXT_shader_pixel_local_storage)
+             {
+                 return AtlasRenderType::r8PixelLocalStorageEXT;
+@@ -118,7 +118,7 @@
+ #endif
+             [[fallthrough]];
+         case AtlasRenderType::r32uiPixelLocalStorageANGLE:
+-#ifndef RIVE_ANDROID
++#if !defined(RIVE_ANDROID) && !defined(RIVE_GLES_EGL)
+             if (capabilities.ANGLE_shader_pixel_local_storage_coherent)
+             {
+                 return AtlasRenderType::r32uiPixelLocalStorageANGLE;
+@@ -442,7 +442,7 @@
+             m_atlasStrokePipelineState.blendEquation = gpu::BlendEquation::none;
+             break;
+         case AtlasRenderType::r8PixelLocalStorageEXT:
+-#ifdef RIVE_ANDROID
++#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
+             defines.push_back(GLSL_ATLAS_RENDER_TARGET_R8_PLS_EXT);
+             m_atlasFillPipelineState.blendEquation = gpu::BlendEquation::none;
+             m_atlasStrokePipelineState.blendEquation = gpu::BlendEquation::none;
+@@ -451,7 +451,7 @@
+ #endif
+             break;
+         case AtlasRenderType::r32uiPixelLocalStorageANGLE:
+-#ifndef RIVE_ANDROID
++#if !defined(RIVE_ANDROID) && !defined(RIVE_GLES_EGL)
+             defines.push_back(GLSL_ATLAS_RENDER_TARGET_R32UI_PLS_ANGLE);
+             m_atlasFillPipelineState.blendEquation = gpu::BlendEquation::none;
+             m_atlasStrokePipelineState.blendEquation = gpu::BlendEquation::none;
+@@ -517,7 +517,7 @@
+ 
+         if (m_atlasRenderType == AtlasRenderType::r8PixelLocalStorageEXT)
+         {
+-#ifdef RIVE_ANDROID
++#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
+             // EXT_shader_pixel_local_storage doesn't support clearing, so we
+             // also need to build a program to clear it at the beginning of the
+             // atlas render pass.
+@@ -1142,7 +1142,7 @@
+         }
+         case AtlasRenderType::r8PixelLocalStorageEXT:
+         {
+-#ifdef RIVE_ANDROID
++#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
+             // EXT_shader_pixel_local_storage can just resolve and output the
+             // render pass at the end of the PLS render pass.
+             glFramebufferTexture2D(GL_FRAMEBUFFER,
+@@ -1157,7 +1157,7 @@
+         }
+         case AtlasRenderType::r32uiPixelLocalStorageANGLE:
+         {
+-#ifndef RIVE_ANDROID
++#if !defined(RIVE_ANDROID) && !defined(RIVE_GLES_EGL)
+             // ANGLE_shader_pixel_local_storage can just resolve and output the
+             // render pass at the end of the PLS render pass.
+             assert(m_atlasRenderTexture != 0);
+@@ -1398,4 +1398,5 @@
+         case gpu::InterlockMode::atomics:
++            sources.push_back(glsl::image_draw_uniforms);
+             sources.push_back(gpu::glsl::draw_path_common);
+             sources.push_back(gpu::glsl::atomic_draw);
+             break;
+@@ -2016,7 +2021,7 @@
+             }
+             case AtlasRenderType::r8PixelLocalStorageEXT:
+             {
+-#ifdef RIVE_ANDROID
++#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
+                 glEnable(GL_SHADER_PIXEL_LOCAL_STORAGE_EXT);
+                 // EXT_shader_pixel_local_storage doesn't support clearing.
+                 // Render the clear color.
+@@ -2031,7 +2036,7 @@
+             }
+             case AtlasRenderType::r32uiPixelLocalStorageANGLE:
+             {
+-#ifndef RIVE_ANDROID
++#if !defined(RIVE_ANDROID) && !defined(RIVE_GLES_EGL)
+                 glBeginPixelLocalStorageANGLE(
+                     1,
+                     std::array<GLenum, 1>{GL_LOAD_OP_ZERO_ANGLE}.data());
+@@ -2188,7 +2193,7 @@
+             }
+             case AtlasRenderType::r8PixelLocalStorageEXT:
+             {
+-#ifdef RIVE_ANDROID
++#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
+                 glDisable(GL_SHADER_PIXEL_LOCAL_STORAGE_EXT);
+ #else
+                 RIVE_UNREACHABLE();
+@@ -2197,7 +2202,7 @@
+             }
+             case AtlasRenderType::r32uiPixelLocalStorageANGLE:
+             {
+-#ifndef RIVE_ANDROID
++#if !defined(RIVE_ANDROID) && !defined(RIVE_GLES_EGL)
+                 // Discard PLS now that we've resolved it to GL_R8.
+                 glEndPixelLocalStorageANGLE(
+                     1,
+@@ -2912,14 +2917,14 @@
+         }
+         else if (strcmp(ext, "GL_ANGLE_shader_pixel_local_storage") == 0)
+         {
+-#ifndef RIVE_ANDROID
++#if !defined(RIVE_ANDROID) && !defined(RIVE_GLES_EGL)
+             capabilities.ANGLE_shader_pixel_local_storage = true;
+ #endif
+         }
+         else if (strcmp(ext, "GL_ANGLE_shader_pixel_local_storage_coherent") ==
+                  0)
+         {
+-#ifndef RIVE_ANDROID
++#if !defined(RIVE_ANDROID) && !defined(RIVE_GLES_EGL)
+             capabilities.ANGLE_shader_pixel_local_storage_coherent = true;
+ #endif
+         }
+@@ -3183,7 +3188,7 @@
+         capabilities.INTEL_fragment_shader_ordering = false;
+     }
+ 
+-#ifdef RIVE_ANDROID
++#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
+     // On Android we need to explicitly load the extension functions. This will
+     // additionally clear the capabilities flags for any extension that could
+     // not load.
+@@ -3228,7 +3233,7 @@
+ 
+     if (!contextOptions.disablePixelLocalStorage)
+     {
+-#ifdef RIVE_ANDROID
++#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
+         if (capabilities.EXT_shader_pixel_local_storage &&
+             (capabilities.ARM_shader_framebuffer_fetch ||
+              capabilities.EXT_shader_framebuffer_fetch))
