@@ -394,6 +394,7 @@ target_include_directories(rive_official
         "${RIVE_CPP_DIR}/renderer/src"
         "${RIVE_CPP_DIR}/renderer/glad/include"
         "${RIVE_CPP_DIR}/renderer/glad"
+        "${RIVE_CPP_DIR}/decoders/include"
         "${RIVE_CPP_DIR}/tests/include"
         "${RIVE_DIRECTX_HEADERS_DIR}/include"
         "${RIVE_DIRECTX_HEADERS_DIR}/include/directx"
