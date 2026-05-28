@@ -157,6 +157,7 @@ rive::rcp<rive::RenderImage> RiveMetalBridge::createRenderImage(
     static_cast<uint32_t>(rgba.width()),
     static_cast<uint32_t>(rgba.height()),
     1,
+    rive::GPUTextureFormat::rgba32,
     rgba.constBits());
   return rive::make_rcp<rive::RiveRenderImage>(texture);
 }
