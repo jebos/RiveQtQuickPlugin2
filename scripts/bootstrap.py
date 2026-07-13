@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 RIVE_RUNTIME_PATH = "3rdparty/rive-cpp"
 RIVE_RUNTIME_URL = "https://github.com/rive-app/rive-runtime.git"
-RIVE_RUNTIME_REV = "64313541caeb1f38a299b89bc3cd8b5b42794fe5"
+RIVE_RUNTIME_REV = "37fdbe73116e15f0e2c3055ad8b16ad631306405"
 RIVE_RUNTIME_CHECK = "include/rive/file.hpp"
 RIVE_RUNTIME_ENV = "RIVEQT_RIVE_RUNTIME_REV"
 
