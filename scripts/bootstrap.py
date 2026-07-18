@@ -151,11 +151,35 @@ def gather_rive_dependencies(rive_cpp_dir: Path) -> list[dict[str, object]]:
   return entries
 
 
+def patch_rive_runtime_includes(target: Path) -> None:
+  include = '#include "rive/renderer/texture.hpp"\n'
+  headers = [
+    (
+      target / "renderer" / "include" / "rive" / "renderer" / "render_context_impl.hpp",
+      '#include "rive/renderer/render_context.hpp"\n',
+    ),
+    (
+      target / "renderer" / "include" / "rive" / "renderer" / "gl" / "render_context_gl_impl.hpp",
+      '#include "rive/renderer/render_context_helper_impl.hpp"\n',
+    ),
+  ]
+  for header, anchor in headers:
+    if not header.exists():
+      continue
+    text = header.read_text(encoding="utf-8")
+    if include in text or anchor not in text:
+      continue
+    header.write_text(text.replace(anchor, anchor + include, 1), encoding="utf-8")
+
+
 def ensure_git_dependency(entry: dict[str, object], refresh: bool) -> None:
   target = ROOT / str(entry["path"])
   name = str(entry["path"])
   if target.exists() and refresh:
     shutil.rmtree(target)
+
+  if target.exists() and entry["path"] == RIVE_RUNTIME_PATH:
+    patch_rive_runtime_includes(target)
 
   if target.exists() and dependency_ready(target, entry):
     print(f"skip {name} (already present)")
@@ -214,6 +238,8 @@ def ensure_git_dependency(entry: dict[str, object], refresh: bool) -> None:
       target,
       ignore=shutil.ignore_patterns(".git"),
     )
+  if entry["path"] == RIVE_RUNTIME_PATH:
+    patch_rive_runtime_includes(target)
   if not dependency_ready(target, entry):
     raise RuntimeError(f"bootstrap copied {name}, but the expected files are still missing")
   print(f"ready {name}")
