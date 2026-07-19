@@ -80,7 +80,6 @@ PIP_SOURCES = [
 DEPENDENCY_PATCH_SPECS = {
   RIVE_RUNTIME_PATH: [
     "patches/rive-runtime-eglfs.patch",
-    "patches/rive-runtime-gl-atomic-image-uniforms.patch",
   ],
 }
 
