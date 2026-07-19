@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 RIVE_RUNTIME_PATH = "3rdparty/rive-cpp"
 RIVE_RUNTIME_URL = "https://github.com/rive-app/rive-runtime.git"
-RIVE_RUNTIME_REV = "64313541caeb1f38a299b89bc3cd8b5b42794fe5"
+RIVE_RUNTIME_REV = "c214c307ee7ba56bfc4bcbac6e9cbd96673b1011"
 RIVE_RUNTIME_CHECK = "include/rive/file.hpp"
 RIVE_RUNTIME_ENV = "RIVEQT_RIVE_RUNTIME_REV"
 
@@ -83,17 +83,6 @@ PIP_SOURCES = [
 PREMAKE_GITHUB_PATTERN = re.compile(
   r"(?P<variable>[A-Za-z0-9_]+)\s*=\s*dependency\.github\(\s*['\"](?P<repo>[^'\"]+)['\"]\s*,\s*['\"](?P<ref>[^'\"]+)['\"]\s*\)"
 )
-MAKE_IMAGE_TEXTURE_DECL_PATTERN = re.compile(
-  r"(?P<indent>[ \t]*)(?:virtual\s+)?rcp<Texture>\s+makeImageTexture\(\s*"
-  r"uint32_t\s+width,\s*"
-  r"uint32_t\s+height,\s*"
-  r"uint32_t\s+mipLevelCount,\s*"
-  r"GPUTextureFormat\s+format,\s*"
-  r"const\s+uint8_t\s+imageDataRGBAPremul\[\]\)\s*(?:override)?;",
-  re.MULTILINE,
-)
-
-
 def run(command: list[str], cwd: Path | None = None) -> None:
     print("+", " ".join(command))
     subprocess.run(command, cwd=cwd or ROOT, check=True)
@@ -162,129 +151,25 @@ def gather_rive_dependencies(rive_cpp_dir: Path) -> list[dict[str, object]]:
   return entries
 
 
-def add_make_image_texture_compat(header: Path) -> None:
-  if not header.exists():
-    return
-
-  text = header.read_text(encoding="utf-8")
-  if "GPUTextureFormat format" not in text or "GPUTextureFormat::rgba32" in text:
-    return
-
-  match = MAKE_IMAGE_TEXTURE_DECL_PATTERN.search(text)
-  if not match:
-    return
-
-  indent = match.group("indent")
-  continuation = indent + " " * 34
-  compatibility_overload = (
-    f"\n{indent}rcp<Texture> makeImageTexture(uint32_t width,\n"
-    f"{continuation}uint32_t height,\n"
-    f"{continuation}uint32_t mipLevelCount,\n"
-    f"{continuation}const uint8_t imageDataRGBAPremul[])\n"
-    f"{indent}{{\n"
-    f"{indent}    return makeImageTexture(width,\n"
-    f"{indent}                            height,\n"
-    f"{indent}                            mipLevelCount,\n"
-    f"{indent}                            GPUTextureFormat::rgba32,\n"
-    f"{indent}                            imageDataRGBAPremul);\n"
-    f"{indent}}}\n"
-  )
-
-  header.write_text(
-    text[:match.end()] + compatibility_overload + text[match.end():],
-    encoding="utf-8",
-  )
-
-
-def apply_dependency_compatibility(target: Path, entry: dict[str, object]) -> None:
-  if entry["path"] == "3rdparty/rive-cpp":
-    render_context_impl_header = (
-      target
-      / "renderer"
-      / "include"
-      / "rive"
-      / "renderer"
-      / "render_context_impl.hpp"
-    )
-    if render_context_impl_header.exists():
-      text = render_context_impl_header.read_text(encoding="utf-8")
-      include = '#include "rive/renderer/texture.hpp"\n'
-      for needle in (
-        '#include "rive/texture_archive.hpp"\n',
-        '#include "rive/gpu_texture_format.hpp"\n',
-      ):
-        if include not in text and needle in text:
-          render_context_impl_header.write_text(
-            text.replace(needle, include + needle),
-            encoding="utf-8",
-          )
-          break
-
-    gl_render_context_header = (
-      target
-      / "renderer"
-      / "include"
-      / "rive"
-      / "renderer"
-      / "gl"
-      / "render_context_gl_impl.hpp"
-    )
-    if gl_render_context_header.exists():
-      text = gl_render_context_header.read_text(encoding="utf-8")
-      include = '#include "rive/renderer/texture.hpp"\n'
-      needle = '#include "rive/renderer/render_context_helper_impl.hpp"\n'
-      if include not in text and needle in text:
-        gl_render_context_header.write_text(
-          text.replace(needle, needle + include),
-          encoding="utf-8",
-        )
-
-    renderer_include_dir = target / "renderer" / "include" / "rive" / "renderer"
-    for header in [
-      renderer_include_dir / "d3d11" / "render_context_d3d_impl.hpp",
-      renderer_include_dir / "d3d12" / "render_context_d3d12_impl.hpp",
-      renderer_include_dir / "gl" / "render_context_gl_impl.hpp",
-      renderer_include_dir / "metal" / "render_context_metal_impl.h",
-      renderer_include_dir / "vulkan" / "render_context_vulkan_impl.hpp",
-      renderer_include_dir / "webgpu" / "render_context_webgpu_impl.hpp",
-    ]:
-      add_make_image_texture_compat(header)
-
-    gl_render_context = target / "renderer" / "src" / "gl" / "render_context_gl_impl.cpp"
-    if gl_render_context.exists():
-      text = gl_render_context.read_text(encoding="utf-8")
-      needle = """        case gpu::InterlockMode::atomics:\n            sources.push_back(gpu::glsl::draw_path_common);\n            sources.push_back(gpu::glsl::atomic_draw);\n            break;\n"""
-      replacement = """        case gpu::InterlockMode::atomics:\n            if (drawType == gpu::DrawType::imageMesh ||\n                drawType == gpu::DrawType::imageRect)\n            {\n                sources.push_back(glsl::image_draw_uniforms);\n            }\n            sources.push_back(gpu::glsl::draw_path_common);\n            sources.push_back(gpu::glsl::atomic_draw);\n            break;\n"""
-      if needle in text:
-        gl_render_context.write_text(
-          text.replace(needle, replacement),
-          encoding="utf-8",
-        )
-    return
-
-  if entry["path"] == "3rdparty/luau":
-    lua_header = target / "VM" / "include" / "lua.h"
-    if lua_header.exists():
-      text = lua_header.read_text(encoding="utf-8")
-      if "lua_pushvector2" not in text:
-        needle = """#if LUA_VECTOR_SIZE == 4\nLUA_API void lua_pushvector(lua_State* L, float x, float y, float z, float w);\n#else\nLUA_API void lua_pushvector(lua_State* L, float x, float y, float z);\n#endif\n"""
-        replacement = needle + """#ifndef lua_pushvector2\n#if LUA_VECTOR_SIZE == 4\n#define lua_pushvector2(L, x, y) lua_pushvector(L, x, y, 0.0f, 0.0f)\n#else\n#define lua_pushvector2(L, x, y) lua_pushvector(L, x, y, 0.0f)\n#endif\n#endif\n"""
-        if needle in text:
-          lua_header.write_text(text.replace(needle, replacement), encoding="utf-8")
-    return
-
-  if entry["path"] != "3rdparty/libhydrogen":
-    return
-
-  hydrogen_c = target / "hydrogen.c"
-  libhydrogen_c = target / "libhydrogen.c"
-  if hydrogen_c.exists() and not libhydrogen_c.exists():
-    shutil.copy2(hydrogen_c, libhydrogen_c)
-
-  hydrogen_h = target / "hydrogen.h"
-  libhydrogen_h = target / "libhydrogen.h"
-  if hydrogen_h.exists() and not libhydrogen_h.exists():
-    shutil.copy2(hydrogen_h, libhydrogen_h)
+def patch_rive_runtime_includes(target: Path) -> None:
+  include = '#include "rive/renderer/texture.hpp"\n'
+  headers = [
+    (
+      target / "renderer" / "include" / "rive" / "renderer" / "render_context_impl.hpp",
+      '#include "rive/renderer/render_context.hpp"\n',
+    ),
+    (
+      target / "renderer" / "include" / "rive" / "renderer" / "gl" / "render_context_gl_impl.hpp",
+      '#include "rive/renderer/render_context_helper_impl.hpp"\n',
+    ),
+  ]
+  for header, anchor in headers:
+    if not header.exists():
+      continue
+    text = header.read_text(encoding="utf-8")
+    if include in text or anchor not in text:
+      continue
+    header.write_text(text.replace(anchor, anchor + include, 1), encoding="utf-8")
 
 
 def ensure_git_dependency(entry: dict[str, object], refresh: bool) -> None:
@@ -293,8 +178,8 @@ def ensure_git_dependency(entry: dict[str, object], refresh: bool) -> None:
   if target.exists() and refresh:
     shutil.rmtree(target)
 
-  if target.exists():
-    apply_dependency_compatibility(target, entry)
+  if target.exists() and entry["path"] == RIVE_RUNTIME_PATH:
+    patch_rive_runtime_includes(target)
 
   if target.exists() and dependency_ready(target, entry):
     print(f"skip {name} (already present)")
@@ -353,7 +238,8 @@ def ensure_git_dependency(entry: dict[str, object], refresh: bool) -> None:
       target,
       ignore=shutil.ignore_patterns(".git"),
     )
-  apply_dependency_compatibility(target, entry)
+  if entry["path"] == RIVE_RUNTIME_PATH:
+    patch_rive_runtime_includes(target)
   if not dependency_ready(target, entry):
     raise RuntimeError(f"bootstrap copied {name}, but the expected files are still missing")
   print(f"ready {name}")
