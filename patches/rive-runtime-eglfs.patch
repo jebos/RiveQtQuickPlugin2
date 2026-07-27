@@ -141,45 +141,50 @@ diff --git a/renderer/src/gl/render_context_gl_impl.cpp b/renderer/src/gl/render
 index d5ca8f2..5fc648d 100644
 --- a/renderer/src/gl/render_context_gl_impl.cpp
 +++ b/renderer/src/gl/render_context_gl_impl.cpp
-@@ -115,7 +115,7 @@ static RenderContextGLImpl::AtlasRenderType select_atlas_render_type(
+@@ -115,7 +115,7 @@ static RenderContextGLImpl::FeatherAtlasRenderType selectFeatherAtlasRenderType(
              }
              [[fallthrough]];
-         case AtlasRenderType::r8PixelLocalStorageEXT:
+         case FeatherAtlasRenderType::r8PixelLocalStorageEXT:
 -#ifdef RIVE_ANDROID
 +#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
              if (capabilities.EXT_shader_pixel_local_storage)
              {
-                 return AtlasRenderType::r8PixelLocalStorageEXT;
-@@ -123,7 +123,7 @@ static RenderContextGLImpl::AtlasRenderType select_atlas_render_type(
+                 return FeatherAtlasRenderType::r8PixelLocalStorageEXT;
+@@ -123,7 +123,7 @@ static RenderContextGLImpl::FeatherAtlasRenderType selectFeatherAtlasRenderType(
  #endif
              [[fallthrough]];
-         case AtlasRenderType::r32uiPixelLocalStorageANGLE:
+         case FeatherAtlasRenderType::r32uiPixelLocalStorageANGLE:
 -#ifndef RIVE_ANDROID
 +#if !defined(RIVE_ANDROID) && !defined(RIVE_GLES_EGL)
              if (capabilities.ANGLE_shader_pixel_local_storage_coherent)
              {
-                 return AtlasRenderType::r32uiPixelLocalStorageANGLE;
-@@ -488,7 +488,7 @@ void RenderContextGLImpl::buildAtlasRenderPipelines()
-             m_atlasStrokePipelineState.blendEquation = gpu::BlendEquation::none;
+                 return FeatherAtlasRenderType::r32uiPixelLocalStorageANGLE;
+@@ -488,10 +488,10 @@ void RenderContextGLImpl::buildFeatherAtlasRenderPipelines()
+             m_featherAtlasStrokePipelineState.blendEquation =
+                 gpu::BlendEquation::none;
              break;
-         case AtlasRenderType::r8PixelLocalStorageEXT:
+         case FeatherAtlasRenderType::r8PixelLocalStorageEXT:
 -#ifdef RIVE_ANDROID
 +#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
              defines.push_back(GLSL_ATLAS_RENDER_TARGET_R8_PLS_EXT);
-             m_atlasFillPipelineState.blendEquation = gpu::BlendEquation::none;
-             m_atlasStrokePipelineState.blendEquation = gpu::BlendEquation::none;
-@@ -497,7 +497,7 @@ void RenderContextGLImpl::buildAtlasRenderPipelines()
+             m_featherAtlasFillPipelineState.blendEquation =
+                 gpu::BlendEquation::none;
+             m_featherAtlasStrokePipelineState.blendEquation =
+                 gpu::BlendEquation::none;
+@@ -497,8 +497,8 @@ void RenderContextGLImpl::buildFeatherAtlasRenderPipelines()
  #endif
              break;
-         case AtlasRenderType::r32uiPixelLocalStorageANGLE:
+         case FeatherAtlasRenderType::r32uiPixelLocalStorageANGLE:
 -#ifndef RIVE_ANDROID
 +#if !defined(RIVE_ANDROID) && !defined(RIVE_GLES_EGL)
              defines.push_back(GLSL_ATLAS_RENDER_TARGET_R32UI_PLS_ANGLE);
-             m_atlasFillPipelineState.blendEquation = gpu::BlendEquation::none;
-             m_atlasFillPipelineState.colorWriteEnabled = false;
-@@ -565,7 +565,7 @@ void RenderContextGLImpl::buildAtlasRenderPipelines()
+             m_featherAtlasFillPipelineState.blendEquation =
+                 gpu::BlendEquation::none;
+             m_featherAtlasFillPipelineState.colorWriteEnabled = false;
+@@ -565,8 +565,8 @@ void RenderContextGLImpl::buildFeatherAtlasRenderPipelines()
  
-         if (m_atlasRenderType == AtlasRenderType::r8PixelLocalStorageEXT)
+         if (m_featherAtlasRenderType ==
+             FeatherAtlasRenderType::r8PixelLocalStorageEXT)
          {
 -#ifdef RIVE_ANDROID
 +#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
@@ -188,7 +193,7 @@ index d5ca8f2..5fc648d 100644
              // atlas render pass.
 @@ -1568,7 +1568,7 @@ void RenderContextGLImpl::resizeAtlasTexture(uint32_t width, uint32_t height)
          }
-         case AtlasRenderType::r8PixelLocalStorageEXT:
+         case FeatherAtlasRenderType::r8PixelLocalStorageEXT:
          {
 -#ifdef RIVE_ANDROID
 +#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
@@ -197,16 +202,16 @@ index d5ca8f2..5fc648d 100644
              glFramebufferTexture2D(GL_FRAMEBUFFER,
 @@ -1583,7 +1583,7 @@ void RenderContextGLImpl::resizeAtlasTexture(uint32_t width, uint32_t height)
          }
-         case AtlasRenderType::r32uiPixelLocalStorageANGLE:
+         case FeatherAtlasRenderType::r32uiPixelLocalStorageANGLE:
          {
 -#ifndef RIVE_ANDROID
 +#if !defined(RIVE_ANDROID) && !defined(RIVE_GLES_EGL)
              // ANGLE_shader_pixel_local_storage can just resolve and output the
              // render pass at the end of the PLS render pass.
-             assert(m_atlasRenderTexture != 0);
+             assert(m_featherAtlasRenderTexture != 0);
 @@ -2472,7 +2472,7 @@ void RenderContextGLImpl::flush(const FlushDescriptor& desc)
              }
-             case AtlasRenderType::r8PixelLocalStorageEXT:
+             case FeatherAtlasRenderType::r8PixelLocalStorageEXT:
              {
 -#ifdef RIVE_ANDROID
 +#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
@@ -215,7 +220,7 @@ index d5ca8f2..5fc648d 100644
                  // Render the clear color.
 @@ -2487,7 +2487,7 @@ void RenderContextGLImpl::flush(const FlushDescriptor& desc)
              }
-             case AtlasRenderType::r32uiPixelLocalStorageANGLE:
+             case FeatherAtlasRenderType::r32uiPixelLocalStorageANGLE:
              {
 -#ifndef RIVE_ANDROID
 +#if !defined(RIVE_ANDROID) && !defined(RIVE_GLES_EGL)
@@ -224,7 +229,7 @@ index d5ca8f2..5fc648d 100644
                      std::array<GLenum, 1>{GL_LOAD_OP_ZERO_ANGLE}.data());
 @@ -2645,7 +2645,7 @@ void RenderContextGLImpl::flush(const FlushDescriptor& desc)
              }
-             case AtlasRenderType::r8PixelLocalStorageEXT:
+             case FeatherAtlasRenderType::r8PixelLocalStorageEXT:
              {
 -#ifdef RIVE_ANDROID
 +#if defined(RIVE_ANDROID) || defined(RIVE_GLES_EGL)
@@ -233,7 +238,7 @@ index d5ca8f2..5fc648d 100644
                  RIVE_UNREACHABLE();
 @@ -2654,7 +2654,7 @@ void RenderContextGLImpl::flush(const FlushDescriptor& desc)
              }
-             case AtlasRenderType::r32uiPixelLocalStorageANGLE:
+             case FeatherAtlasRenderType::r32uiPixelLocalStorageANGLE:
              {
 -#ifndef RIVE_ANDROID
 +#if !defined(RIVE_ANDROID) && !defined(RIVE_GLES_EGL)
