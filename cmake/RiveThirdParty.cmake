@@ -229,6 +229,7 @@ add_library(rive_yoga STATIC)
 file(GLOB RIVE_YOGA_SOURCES CONFIGURE_DEPENDS
     "${RIVE_YOGA_DIR}/yoga/*.cpp"
     "${RIVE_YOGA_DIR}/yoga/event/*.cpp"
+    "${RIVE_YOGA_DIR}/yoga/grid/*.cpp"
 )
 target_sources(rive_yoga PRIVATE ${RIVE_YOGA_SOURCES})
 target_include_directories(rive_yoga
