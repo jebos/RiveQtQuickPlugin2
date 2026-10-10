@@ -78,6 +78,12 @@ void QPainterRivePaint::shader(rive::rcp<rive::RenderShader> shader)
   m_shader = std::move(shader);
 }
 
+void QPainterRivePaint::shaderTransform(const rive::Mat2D& transform)
+{
+  m_shaderTransform = QTransform(transform[0], transform[1], transform[2],
+    transform[3], transform[4], transform[5]);
+}
+
 void QPainterRivePaint::invalidateStroke()
 {
 }
@@ -116,7 +122,9 @@ QBrush QPainterRivePaint::brush() const
 {
   if (m_shader) {
     auto* shader = static_cast<QPainterRiveShader*>(m_shader.get());
-    return shader->brush();
+    QBrush brush = shader->brush();
+    brush.setTransform(m_shaderTransform);
+    return brush;
   }
 
   return QBrush(m_color);
