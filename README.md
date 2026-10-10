@@ -123,6 +123,24 @@ QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
 
 ## Build
 
+### Renderer preload
+
+Call `preload()` on the GUI thread after creating your `QQuickWindow`, before
+loading the Rive items you want to display:
+
+```cpp
+#include <riveqtquick.h>
+
+RiveQtQuick::preload(window);
+```
+
+This initializes the shared renderer on the window's render thread when rendering
+starts and keeps it alive until the scene graph is released. Repeated calls for
+the same window do nothing; initialization runs again if the scene graph is
+recreated. No hidden item or `.riv` file is needed. Software rendering needs no
+GPU preload. This moves renderer startup work earlier; content-specific shaders
+and file loading can still take time on first use.
+
 ### Windows
 
 Typical Windows build with MSVC 2022:
