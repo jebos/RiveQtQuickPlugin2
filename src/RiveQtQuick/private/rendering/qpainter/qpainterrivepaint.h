@@ -17,6 +17,7 @@ class QPainterRivePaint final : public rive::RenderPaint {
   void feather(float value) override;
   void blendMode(rive::BlendMode value) override;
   void shader(rive::rcp<rive::RenderShader> shader) override;
+  void shaderTransform(const rive::Mat2D& transform) override;
   void invalidateStroke() override;
 
   bool isStroke() const;
@@ -41,4 +42,5 @@ class QPainterRivePaint final : public rive::RenderPaint {
   Qt::PenCapStyle m_capStyle { Qt::FlatCap };
   QPainter::CompositionMode m_compositionMode { QPainter::CompositionMode_SourceOver };
   rive::rcp<rive::RenderShader> m_shader;
+  QTransform m_shaderTransform;
 };

@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 RIVE_RUNTIME_PATH = "3rdparty/rive-cpp"
 RIVE_RUNTIME_URL = "https://github.com/rive-app/rive-runtime.git"
-RIVE_RUNTIME_REV = "11217a528b34966eca3765dc88c4ec0c8417d09c"
+RIVE_RUNTIME_REV = "3ccf0d9d7c2cf8bee0553245acaffe21ae3314b6"
 RIVE_RUNTIME_CHECK = "include/rive/file.hpp"
 RIVE_RUNTIME_ENV = "RIVEQT_RIVE_RUNTIME_REV"
 
@@ -36,7 +36,8 @@ PREMAKE_DEPENDENCY_SPECS = [
     ],
   },
   {
-    "premake": "dependencies/premake5_yoga_v2.lua",
+    "ref_file": "dependencies/yoga.ref",
+    "url": "https://github.com/rive-app/yoga.git",
     "variable": "yoga",
     "path": "3rdparty/yoga",
     "check": "yoga/Yoga.h",
@@ -144,6 +145,18 @@ def parse_premake_dependency(
 def gather_rive_dependencies(rive_cpp_dir: Path) -> list[dict[str, object]]:
   entries: list[dict[str, object]] = []
   for spec in PREMAKE_DEPENDENCY_SPECS:
+    if "ref_file" in spec:
+      ref_file = rive_cpp_dir / str(spec["ref_file"])
+      ref = ref_file.read_text(encoding="utf-8").strip()
+      if not ref:
+        raise RuntimeError(f"Empty dependency revision in {ref_file}")
+      entries.append({
+        "path": spec["path"],
+        "url": spec["url"],
+        "rev": ref,
+        "check": spec["check"],
+      })
+      continue
     entries.append(
       parse_premake_dependency(
         rive_cpp_dir,

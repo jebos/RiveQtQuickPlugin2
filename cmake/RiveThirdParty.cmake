@@ -434,6 +434,7 @@ target_compile_definitions(rive_official
         WITH_RIVE_TEXT
         WITH_RIVE_LAYOUT
         WITH_RIVE_SCRIPTING
+        WITH_RIVE_SCRIPTING_LUAU
         WITH_RIVE_AUDIO
         _RIVE_INTERNAL_
         YOGA_EXPORT=
