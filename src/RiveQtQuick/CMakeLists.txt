@@ -1,6 +1,7 @@
 set(RIVEQTQUICK_SOURCES
     rivebinding.cpp
     riveitem.cpp
+    rivepreload.cpp
     riveqtquickplugin.cpp
     private/rivelogging.cpp
     private/rivefileassetloader.cpp
@@ -12,6 +13,7 @@ set(RIVEQTQUICK_SOURCES
 set(RIVEQTQUICK_HEADERS
     rivebinding.h
     riveitem.h
+    riveqtquick.h
     private/rivelogging.h
     private/rivefileassetloader.h
     private/riveinspector.h
@@ -109,15 +111,20 @@ qt_add_qml_module(RiveQtQuick
 )
 
 target_include_directories(RiveQtQuick
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/RiveQtQuick>
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/private
 )
 
+install(FILES riveqtquick.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/RiveQtQuick)
+
 target_link_libraries(RiveQtQuick
+    PUBLIC
+        Qt6::Core
     PRIVATE
         Qt6::Concurrent
-        Qt6::Core
         Qt6::Gui
         Qt6::GuiPrivate
         Qt6::Qml

@@ -34,6 +34,7 @@ class RiveBackendBridge {
   static QString graphicsApiName(QSGRendererInterface::GraphicsApi api);
 
   virtual QSGRendererInterface::GraphicsApi api() const = 0;
+  virtual bool preload(QQuickWindow*, QRhiCommandBuffer*) { return true; }
   virtual TargetKind targetKind() const = 0;
   virtual bool syncPresentation(QQuickWindow* window,
     const QSize& pixelSize)

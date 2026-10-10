@@ -18,6 +18,10 @@ class RenderContext;
 class RiveD3D12Bridge : public RiveBackendBridge {
   public:
   QSGRendererInterface::GraphicsApi api() const override;
+  bool preload(QQuickWindow* window, QRhiCommandBuffer* commandBuffer) override
+  {
+    return ensureContext(window, commandBuffer);
+  }
   TargetKind targetKind() const override;
   bool syncPresentation(QQuickWindow* window,
     const QSize& pixelSize) override;
